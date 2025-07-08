@@ -1,0 +1,35 @@
+[project]
+name = "shopee-product-filter"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "bs4>=0.0.2",
+  "fastapi>=0.116.0",
+  "httpx>=0.28.1",
+  "lxml>=6.0.0",
+  "python-multipart>=0.0.20",
+  "sqlmodel>=0.0.24",
+  "streamlit>=1.46.1",
+  "uvicorn>=0.35.0",
+]
+
+[dependency-groups]
+dev = ["mypy>=1.16.1", "nox>=2025.5.1", "pytest>=8.4.1", "ruff>=0.12.2"]
+
+
+[tool.pyright]
+# [Pyright Configuration](https://microsoft.github.io/pyright/#/configuration?id=pyright-configuration)
+venvPath = "."
+venv = ".venv"
+include = ["src"]
+exclude = ["**/test/**"]
+reportMissingImports = "information"
+# Other common settings:
+# venvPath: Specifies the path to your project's virtual environment.
+# venv: Specifies the name of your project's virtual environment.
+# pythonPath: Specifies the path to the Python interpreter.
+# extraPaths: Allows you to specify additional paths to include in the type checking process.
+# report* settings: Control the severity of various diagnostic messages (e.g., reportUnusedClass, reportPrivateImport).
+# typeCheckingMode: Configures the strictness of type checking (e.g., basic, strict).

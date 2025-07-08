@@ -1,0 +1,13 @@
+beautifulsoup4
+black
+bs4
+google-genai
+httpx
+lxml
+pandas
+pytest-playwright
+python-dotenv
+python-multipart
+pyyaml
+requests
+sqlmodel

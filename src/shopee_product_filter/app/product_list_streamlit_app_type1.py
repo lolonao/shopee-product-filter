@@ -1,11 +1,17 @@
+import sys
+import os
+
+# Add project root to sys.path for module discovery
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import streamlit as st
 import pandas as pd
 import requests
-import os
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
-import sys
 
 # calculator.py を同じディレクトリからインポート
 try:
@@ -19,12 +25,6 @@ except ImportError as e:
         f"エラー: `calculator.py` のロードに失敗しました。パスを確認してください。詳細: {e}"
     )
     # フォールバック関数 (インポート失敗時)
-    def calculate_minimum_purchase_price(price, weight):
-        raise NotImplementedError("calculator.py がロードできませんでした。")
-
-    def get_calc_exchange_rate(pair, isDummy=False):
-        raise NotImplementedError("calculator.py がロードできませんでした。")
-
     def calculate_minimum_purchase_price(price, weight):
         raise NotImplementedError("calculator.py がロードできませんでした。")
 
@@ -316,13 +316,10 @@ ALL_PRODUCT_LIST_COLUMNS = [
     "price",
     "currency",
     "image_url",
-    "location",
     "sold",
     "shop_type",
-    "list_type",
     "sourcing_status",
     "sourcing_notes",
-    "status_updated_at",  # ★追加！
     "created_at",
     "updated_at",
 ]
@@ -333,9 +330,7 @@ DEFAULT_PRODUCT_LIST_DISPLAY_COLUMNS = [
     "currency",
     "sold",
     "shop_type",
-    "list_type",
     "sourcing_status",
-    "status_updated_at",  # ★追加！
     "product_url",
 ]
 
@@ -382,18 +377,13 @@ with st.form(key="product_list_search_form_with_sourcing"):  # キー名を変�
             "最大販売数", min_value=0, value=100, key="pl_max_sold_s"
         )
 
-    c3, c4, c5 = st.columns(3)  # ★ソーシングステータス用に列を追加
+    c3, c4 = st.columns(2)  # ★ソーシングステータス用に列を追加
     with c3:
         shop_type_options = ["", "Standard", "Preferred", "Mall", "Official Store"]
         selected_shop_type = st.selectbox(
             "ショップタイプ", options=shop_type_options, index=0, key="pl_shop_type_s"
         )
     with c4:
-        list_type_options = ["", "ショップ", "検索/カテゴリー", "汎用", "不明"]
-        selected_list_type = st.selectbox(
-            "リストタイプ", options=list_type_options, index=0, key="pl_list_type_s"
-        )
-    with c5:
         # ★ソーシングステータスでの絞り込みを追加！
         selected_sourcing_status = st.selectbox(
             "ソーシング状況",
@@ -457,8 +447,6 @@ if search_and_update_button:
         search_params["max_sold"] = max_sold
     if selected_shop_type:
         search_params["shop_type"] = selected_shop_type
-    if selected_list_type:
-        search_params["list_type"] = selected_list_type
     if selected_sourcing_status:
         search_params["sourcing_status"] = selected_sourcing_status  # ★追加！
     if start_date_created:
@@ -573,7 +561,7 @@ if not st.session_state.searched_product_list_df.empty:
             if row.get("product_url"):
                 st.markdown(f"[Shopeeで見る]({row['product_url']})")
             st.caption(
-                f"リストタイプ: {row.get('list_type', '不明')} | ショップタイプ: {row.get('shop_type', '不明')}"
+                f"ショップタイプ: {row.get('shop_type', '不明')}"
             )
             st.caption(f"DB登録日: {row.get('created_at')}")
             st.caption(f"情報最終更新日: {row.get('updated_at')}")
@@ -647,9 +635,6 @@ if not st.session_state.searched_product_list_df.empty:
                                         st.session_state.searched_product_list_df.loc[
                                             idx, "sourcing_notes"
                                         ] = payload["sourcing_notes"]
-                                    st.session_state.searched_product_list_df.loc[
-                                        idx, "status_updated_at"
-                                    ] = updated_item_data.get("status_updated_at")
                                     st.session_state.searched_product_list_df.loc[
                                         idx, "updated_at"
                                     ] = updated_item_data.get("updated_at")

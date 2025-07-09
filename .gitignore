@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# My custom ignores
+shopee_product_list_data.db
+data/SS/

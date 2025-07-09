@@ -2,7 +2,9 @@ import sys
 import os
 
 # Add project root to sys.path for module discovery
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+project_root = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..")
+)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -24,6 +26,7 @@ except ImportError as e:
     st.error(
         f"エラー: `calculator.py` のロードに失敗しました。パスを確認してください。詳細: {e}"
     )
+
     # フォールバック関数 (インポート失敗時)
     def calculate_minimum_purchase_price(price, weight):
         raise NotImplementedError("calculator.py がロードできませんでした。")
@@ -388,7 +391,7 @@ with st.form(key="product_list_search_form_with_sourcing"):  # キー名を変�
         selected_sourcing_status = st.selectbox(
             "ソーシング状況",
             options=SOURCING_STATUS_OPTIONS,
-            index=0,  # SOURCING_STATUS_OPTIONS を使う
+            index=0,  # 初期値は空文字（「指定なし」）
             help="特定のソーシング状況の商品に絞り込みます。",
             key="pl_sourcing_status_s",
         )
@@ -409,10 +412,16 @@ with st.form(key="product_list_search_form_with_sourcing"):  # キー名を変�
         default=DEFAULT_PRODUCT_LIST_DISPLAY_COLUMNS,
         key="pl_display_cols_s",
     )
-    offset = st.number_input(
-        "表示開始位置 (オフセット)", min_value=0, value=0, step=20, key="pl_offset_s"
+    # ページネーションのための表示開始位置
+    display_start_index = st.number_input(
+        "表示開始位置 (ページネーション用)",
+        min_value=0,
+        value=0,
+        step=20,
+        key="pl_offset_s",
     )
-    limit = st.number_input(
+    # ページネーションのための最大表示件数
+    display_limit = st.number_input(
         "最大表示件数 (リミット)",
         min_value=1,
         max_value=200,
@@ -428,7 +437,10 @@ if "searched_product_list_df" not in st.session_state:
     st.session_state.searched_product_list_df = pd.DataFrame()
 
 if search_and_update_button:
-    search_params: Dict[str, Any] = {"offset": offset, "limit": limit}
+    search_params: Dict[str, Any] = {
+        "offset": display_start_index,
+        "limit": display_limit,
+    }
     # (中略 - 価格、販売数などのパラメータ組み立ては前回と同じ)
     if display_rate_sgd_jpy:
         if price_jpy_min is not None:
@@ -447,7 +459,7 @@ if search_and_update_button:
         search_params["max_sold"] = max_sold
     if selected_shop_type:
         search_params["shop_type"] = selected_shop_type
-    if selected_sourcing_status:
+    if selected_sourcing_status and selected_sourcing_status != "":
         search_params["sourcing_status"] = selected_sourcing_status  # ★追加！
     if start_date_created:
         search_params["start_date_created"] = datetime.combine(
@@ -560,9 +572,7 @@ if not st.session_state.searched_product_list_df.empty:
             )
             if row.get("product_url"):
                 st.markdown(f"[Shopeeで見る]({row['product_url']})")
-            st.caption(
-                f"ショップタイプ: {row.get('shop_type', '不明')}"
-            )
+            st.caption(f"ショップタイプ: {row.get('shop_type', '不明')}")
             st.caption(f"DB登録日: {row.get('created_at')}")
             st.caption(f"情報最終更新日: {row.get('updated_at')}")
 
@@ -570,45 +580,53 @@ if not st.session_state.searched_product_list_df.empty:
             # 各アイテムのソーシング情報を更新するためのフォーム
             # item_id ごとにユニークなキーを使う必要がある
             with st.form(key=f"sourcing_form_{item_id}"):
-                current_status = (
-                    row.get("sourcing_status")
-                    if row.get("sourcing_status")
-                    else SOURCING_STATUS_OPTIONS[0]
-                )  # "" をデフォルトに
-                # SOURCING_STATUS_OPTIONS に current_status がなければ、デフォルトのインデックスを使う
+
+                def format_sourcing_status_display(option):
+                    if option == "":
+                        return "指定なし"  # 空文字の場合に「指定なし」と表示
+                    return option
+
+                current_status = row.get("sourcing_status")
+                # current_status が None または空文字の場合、UI上の初期値は「未着手」と表示されるが、
+                # 内部的な値は空文字のままにするため、index=0 を使う。
+                # 既存の値がある場合はそのインデックスを使う。
                 try:
-                    status_index = SOURCING_STATUS_OPTIONS.index(current_status)
+                    status_index = (
+                        SOURCING_STATUS_OPTIONS.index(current_status)
+                        if current_status
+                        else 0
+                    )
                 except ValueError:
-                    status_index = 0  # 見つからなければ「指定なし」
+                    status_index = 0  # 見つからなければ空文字のインデックス
 
                 new_status = st.selectbox(
                     "ソーシング状況",
                     SOURCING_STATUS_OPTIONS,
                     index=status_index,
+                    format_func=format_sourcing_status_display,
                     key=f"status_{item_id}",
                 )
+
                 new_notes = st.text_area(
                     "作業メモ",
                     value=row.get("sourcing_notes", ""),
                     height=100,
                     key=f"notes_{item_id}",
                 )
+
                 sourcing_submit_button = st.form_submit_button("この商品の情報を更新")
 
                 if sourcing_submit_button:
                     payload = {}
-                    if new_status != row.get(
-                        "sourcing_status"
-                    ):  # 変更があった場合のみ送信
+                    # フォームが送信された場合のみ、変更をチェックしてpayloadに追加
+                    if new_status != row.get("sourcing_status"):
                         payload["sourcing_status"] = (
                             new_status if new_status else None
-                        )  # 空文字はNoneとして送信
-                    if new_notes != row.get(
-                        "sourcing_notes"
-                    ):  # 変更があった場合のみ送信
+                        )
+                    if new_notes != row.get("sourcing_notes", ""): # row.get()のデフォルト値を考慮
                         payload["sourcing_notes"] = new_notes
 
-                    if payload:  # 何か更新する情報がある場合のみAPIを叩く
+                    if payload:
                         update_url = FASTAPI_SOURCING_INFO_URL_TEMPLATE.format(
                             item_id=item_id
                         )
@@ -616,12 +634,7 @@ if not st.session_state.searched_product_list_df.empty:
                             response_update = requests.put(update_url, json=payload)
                             response_update.raise_for_status()
                             updated_item_data = response_update.json()
-                            st.success(
-                                f"商品ID {item_id} のソーシング情報を更新しました！"
-                            )
-                            # ★★★ ここで検索結果のDataFrame (st.session_state.searched_product_list_df) を直接更新 ★★★
-                            #     または、再度APIから全データをフェッチし直す（今回は前者で試す）
-                            #     df の該当行を更新する
+                            st.success(f"商品ID {item_id} のソーシング情報を更新しました！")
                             for (
                                 idx,
                                 r,
@@ -639,8 +652,7 @@ if not st.session_state.searched_product_list_df.empty:
                                         idx, "updated_at"
                                     ] = updated_item_data.get("updated_at")
                                     break
-                            st.rerun()  # UIを再描画して更新を即時反映
-
+                            st.rerun()
                         except requests.exceptions.RequestException as e_req:
                             st.error(
                                 f"商品ID {item_id} のソーシング情報更新中にAPIエラー: {e_req}"
@@ -653,7 +665,7 @@ if not st.session_state.searched_product_list_df.empty:
                         st.info(
                             f"商品ID {item_id} のソーシング情報に変更はありませんでした。"
                         )
-        st.markdown("---")
+    st.markdown("---")
 
     # ダウンロードボタン (検索結果全体に対して)
     if not df_to_display.empty:

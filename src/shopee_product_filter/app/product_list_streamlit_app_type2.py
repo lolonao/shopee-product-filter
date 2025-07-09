@@ -178,8 +178,9 @@ with st.form(key="product_list_search_form"):
     selected_columns_to_display = st.multiselect(
         "検索結果テーブル表示項目:", options=ALL_PRODUCT_LIST_COLUMNS, default=DEFAULT_PRODUCT_LIST_DISPLAY_COLUMNS, key="pl_display_cols"
     )
-    offset_pl = st.number_input("表示開始位置 (オフセット)", min_value=0, value=0, step=10, key="pl_offset")
-    limit_pl = st.number_input("最大表示件数 (リミット)", min_value=1, max_value=200, value=50, step=10, key="pl_limit")
+    # ページネーションのための表示開始位置
+    display_start_index = st.number_input("表示開始位置 (ページネーション用)", min_value=0, value=0, step=10, key="pl_offset")
+    display_limit = st.number_input("最大表示件数 (リミット)", min_value=1, max_value=200, value=50, step=10, key="pl_limit")
     search_button = st.form_submit_button(label="この条件で検索")
 
 if search_button:
@@ -193,11 +194,11 @@ if search_button:
         "start_date_input (form)": start_date_val.isoformat() if start_date_val else None,
         "end_date_input (form)": end_date_val.isoformat() if end_date_val else None,
         "selected_columns_to_display": selected_columns_to_display,
-        "offset": offset_pl, "limit": limit_pl
+        "offset": display_start_index, "limit": display_limit
     }
     logger.info(f"検索フォーム入力値: {form_inputs}")
 
-    search_params_api: Dict[str, Any] = {"offset": offset_pl, "limit": limit_pl}
+    search_params_api: Dict[str, Any] = {"offset": display_start_index, "limit": display_limit}
     min_price_sgd_val: Optional[float] = None
     max_price_sgd_val: Optional[float] = None
     if st.session_state.jpy_to_sgd_rate:

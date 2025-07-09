@@ -409,10 +409,12 @@ with st.form(key="product_list_search_form_with_sourcing"):  # キー名を変�
         default=DEFAULT_PRODUCT_LIST_DISPLAY_COLUMNS,
         key="pl_display_cols_s",
     )
-    offset = st.number_input(
-        "表示開始位置 (オフセット)", min_value=0, value=0, step=20, key="pl_offset_s"
+    # ページネーションのための表示開始位置
+    display_start_index = st.number_input(
+        "表示開始位置 (ページネーション用)", min_value=0, value=0, step=20, key="pl_offset_s"
     )
-    limit = st.number_input(
+    # ページネーションのための最大表示件数
+    display_limit = st.number_input(
         "最大表示件数 (リミット)",
         min_value=1,
         max_value=200,
@@ -428,7 +430,7 @@ if "searched_product_list_df" not in st.session_state:
     st.session_state.searched_product_list_df = pd.DataFrame()
 
 if search_and_update_button:
-    search_params: Dict[str, Any] = {"offset": offset, "limit": limit}
+    search_params: Dict[str, Any] = {"offset": display_start_index, "limit": display_limit}
     # (中略 - 価格、販売数などのパラメータ組み立ては前回と同じ)
     if display_rate_sgd_jpy:
         if price_jpy_min is not None:

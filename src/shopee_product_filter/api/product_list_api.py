@@ -154,7 +154,7 @@ def update_sourcing_info(
             changed = True
     if changed:
         current_time = datetime.now(timezone.utc)
-        db_item.status_updated_at = current_time
+        
         db_item.updated_at = current_time
         session.add(db_item)
         session.commit()

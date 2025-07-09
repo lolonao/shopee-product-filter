@@ -1,7 +1,15 @@
+import sys
+import os
+from datetime import timezone
+
+# Add project root to sys.path for module discovery
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import streamlit as st
 import pandas as pd
 import requests
-import os
 import logging # logging モジュールをしっかり使うぜ！
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, date
@@ -98,8 +106,13 @@ with st.expander("📤 商品リストHTMLファイルをアップロードし�
                 logger.info(f"FastAPIからのレスポンスボディ (JSON): {result}")
                 st.subheader("アップロード処理結果")
                 st.json(result)
-                if result.get("processed_files", 0) > 0: st.success(f"{result.get('processed_files')} 個のファイルの処理に成功しました。")
-                if result.get("skipped_files_or_parse_errors", 0) > 0: st.warning(f"{result.get('skipped_files_or_parse_errors')} 個のファイルでエラー/スキップ発生。詳細はJSON結果やログ参照。")
+                total_processed_items = sum(r.get("items_processed", 0) for r in result if r.get("status") == "success")
+                total_skipped_or_errored_files = sum(1 for r in result if r.get("status") != "success")
+
+                if total_processed_items > 0:
+                    st.success(f"合計 {total_processed_items} 個のアイテムの処理に成功しました。")
+                if total_skipped_or_errored_files > 0:
+                    st.warning(f"合計 {total_skipped_or_errored_files} 個のファイルでエラー/スキップが発生しました。詳細はJSON結果やログ参照。")
             except requests.exceptions.ConnectionError as e:
                 logger.error(f"FastAPI接続エラー (アップロード時): {e}")
                 st.error("🚨 APIサーバーに接続できませんでした。")
@@ -113,8 +126,8 @@ with st.expander("📤 商品リストHTMLファイルをアップロードし�
 # --- DBから商品リスト情報を検索・表示するセクション (ログ追加) ---
 st.header("🔍 データベース内の商品リスト情報を検索・表示")
 
-ALL_PRODUCT_LIST_COLUMNS = ["id", "product_url", "created_at", "product_name", "price", "currency", "image_url", "location", "sold", "shop_type", "list_type"]
-DEFAULT_PRODUCT_LIST_DISPLAY_COLUMNS = ["product_name", "price", "currency", "sold", "location", "shop_type", "list_type", "image_url"]
+ALL_PRODUCT_LIST_COLUMNS = ["id", "product_url", "created_at", "product_name", "price", "currency", "image_url", "sold", "shop_type"]
+DEFAULT_PRODUCT_LIST_DISPLAY_COLUMNS = ["product_name", "price", "currency", "sold", "shop_type", "image_url"]
 
 # 為替レートの取得と表示 (ログはget_exchange_rate関数内に追加済み)
 if 'sgd_to_jpy_rate' not in st.session_state: st.session_state.sgd_to_jpy_rate = None
@@ -149,10 +162,7 @@ with st.form(key="product_list_search_form"):
     st.markdown("**オプション**")
     c3, c4 = st.columns(2)
     with c3:
-        location_japan_only = st.checkbox("配送元が日本の商品のみ", value=False, key="pl_loc_jp")
         shop_types = st.multiselect("ショップタイプ", options=["Standard", "Preferred", "Mall", "Official Store"], default=[], key="pl_shop_types")
-    with c4:
-        list_types = st.multiselect("リストタイプ", options=["ショップ", "検索/カテゴリー", "汎用", "不明"], default=[], key="pl_list_types")
     enable_date_filter = st.checkbox("登録日でフィルタリングする", key="pl_enable_date_filter")
     start_date_val: Optional[datetime] = None
     end_date_val: Optional[datetime] = None
@@ -178,8 +188,7 @@ if search_button:
     form_inputs = {
         "min_price_jpy": min_price_jpy, "max_price_jpy": max_price_jpy,
         "min_sold": min_sold, "max_sold": max_sold,
-        "location_japan_only": location_japan_only,
-        "shop_types": shop_types, "list_types": list_types,
+        "shop_types": shop_types,
         "enable_date_filter": enable_date_filter,
         "start_date_input (form)": start_date_val.isoformat() if start_date_val else None,
         "end_date_input (form)": end_date_val.isoformat() if end_date_val else None,
@@ -204,9 +213,7 @@ if search_button:
 
     if min_sold is not None: search_params_api["min_sold"] = min_sold
     if max_sold is not None: search_params_api["max_sold"] = max_sold
-    if location_japan_only: search_params_api["location_keywords"] = "Japan"
     if shop_types: search_params_api["shop_types"] = shop_types
-    if list_types: search_params_api["list_types"] = list_types
     if enable_date_filter and start_date_val: search_params_api["start_date"] = start_date_val.isoformat()
     if enable_date_filter and end_date_val: search_params_api["end_date"] = end_date_val.isoformat()
         

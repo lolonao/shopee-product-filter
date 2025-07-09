@@ -35,18 +35,15 @@ engine_product_list = create_engine(DATABASE_URL_PRODUCT_LIST, echo=False)
 # --- SQLModelの商品リスト情報モデル定義 (変更なし) ---
 class ProductBasicItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, index=True)
-    product_url: str = Field(unique=True, index=True, max_length=2048)
-    product_name: Optional[str] = Field(default=None, max_length=512)
+    sold: Optional[int] = Field(default=0)
     price: Optional[float] = None
     currency: Optional[str] = Field(default=None, max_length=10)
-    image_url: Optional[str] = Field(default=None, max_length=2048)
-    location: Optional[str] = Field(default=None, max_length=255)
-    sold: Optional[int] = Field(default=0)
+    product_name: Optional[str] = Field(default=None, max_length=512)
     shop_type: Optional[str] = Field(default=None, max_length=50)
-    list_type: Optional[str] = Field(default=None, max_length=50)
+    product_url: str = Field(unique=True, index=True, max_length=2048)
+    image_url: Optional[str] = Field(default=None, max_length=2048)
     sourcing_status: Optional[str] = Field(default=None, index=True, max_length=50)
     sourcing_notes: Optional[str] = Field(default=None)
-    status_updated_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), nullable=False)
 
@@ -105,7 +102,6 @@ def get_basic_products_with_filters(
     min_sold: Optional[int] = Query(default=None),
     max_sold: Optional[int] = Query(default=None),
     shop_type: Optional[str] = Query(default=None),
-    list_type: Optional[str] = Query(default=None),
     sourcing_status: Optional[str] = Query(default=None),
     start_date_created: Optional[datetime] = Query(default=None),
     end_date_created: Optional[datetime] = Query(default=None),
@@ -116,7 +112,6 @@ def get_basic_products_with_filters(
     if min_sold is not None: conditions.append(ProductBasicItem.sold >= min_sold)      # type: ignore
     if max_sold is not None: conditions.append(ProductBasicItem.sold <= max_sold)      # type: ignore
     if shop_type: conditions.append(ProductBasicItem.shop_type == shop_type)  # type: ignore
-    if list_type: conditions.append(ProductBasicItem.list_type == list_type)  # type: ignore
     if sourcing_status: conditions.append(ProductBasicItem.sourcing_status == sourcing_status) # type: ignore
     if start_date_created: conditions.append(ProductBasicItem.created_at >= start_date_created) # type: ignore
     if end_date_created: conditions.append(ProductBasicItem.created_at <= end_date_created) # type: ignore
@@ -199,15 +194,6 @@ async def upload_product_list_html_and_save(
                 continue
 
             items_processed_count = 0
-            soup_for_list_type = BeautifulSoup(content.decode('utf-8', errors='ignore'), 'lxml')
-            detected_list_type = "不明"
-            if soup_for_list_type.select('div.shop-search-result-view > div.row > div.shop-search-result-view__item'):
-                detected_list_type = "ショップ"
-            elif soup_for_list_type.select('li.col-xs-2-4.shopee-search-item-result__item'):
-                detected_list_type = "検索/カテゴリー"
-            elif soup_for_list_type.select('li[data-sqe="item"]'):
-                detected_list_type = "汎用"
-            logger.info(f"ファイル '{file_name}' の検出リストタイプ: {detected_list_type}")
 
             for item_data in parsed_items:
                 product_url = item_data.get("product_url")
@@ -226,13 +212,11 @@ async def upload_product_list_html_and_save(
                     update_data = { k: v for k, v in item_data.items() if k in valid_model_keys and k not in ["created_at", "id", "sourcing_status", "sourcing_notes", "status_updated_at"]}
                     for key, value in update_data.items():
                         setattr(existing_item, key, value)
-                    existing_item.list_type = detected_list_type
                     existing_item.updated_at = current_time
                     session.add(existing_item)
                 else:
                     logger.info(f"商品URL '{product_url}' は新規のため、追加します。 (ファイル: {file_name})")
-                    new_item_data_with_list_type = {**item_data, "list_type": detected_list_type}
-                    filtered_new_item_data = { k: v for k, v in new_item_data_with_list_type.items() if k in valid_model_keys and k != "id"}
+                    filtered_new_item_data = { k: v for k, v in item_data.items() if k in valid_model_keys and k != "id"}
                     new_item = ProductBasicItem(**filtered_new_item_data)
                     session.add(new_item)
                 items_processed_count += 1

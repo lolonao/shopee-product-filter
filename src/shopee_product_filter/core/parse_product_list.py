@@ -52,8 +52,6 @@ def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict
 
     soup = BeautifulSoup(html_content, 'lxml')
     products = []
-    list_type = "不明" # リストタイプを保持する変数
-
     # 商品リストのタイプを判定し、アイテムのリストを取得
     # ショップの商品リスト
     shop_items = soup.select('div.shop-search-result-view > div.row > div.shop-search-result-view__item')
@@ -64,17 +62,11 @@ def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict
 
 
     if shop_items:
-        print(f"検出されたリストタイプ: ショップリスト ({html_file_path})")
         items = shop_items
-        list_type = "ショップ"
     elif search_category_items: # キーワード検索とカテゴリー別のリストに対応
-        print(f"検出されたリストタイプ: カテゴリーまたはキーワード検索リスト ({html_file_path})")
         items = search_category_items
-        list_type = "検索/カテゴリー"
     elif data_sqe_items:
-        print(f"検出されたリストタイプ: 汎用アイテムリスト (data-sqe=\"item\") ({html_file_path})")
         items = data_sqe_items
-        list_type = "汎用"
     else:
         print(f"エラー: 商品リストの抽出箇所を特定できませんでした。({html_file_path})")
         return None # 商品リストが見つからなかった場合はNoneを返す

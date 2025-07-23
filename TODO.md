@@ -71,6 +71,14 @@
 
 ---
 
+## ドキュメント整理
+
+-   [x] `ISSUE_17_DEBUG_NOTES.md` を `docs/archive` に移動し、アーカイブする.
+-   [x] `開発手順.md` の内容を確認し、必要であれば更新する.
+-   [x] `アプリ仕様書.md` や `起動方法.md` の内容を確認し、必要であれば更新する.
+
+---
+
 ## ISSUE #14: Streamlitアプリのページネーション関連UI/変数名の改善
 
 -   [x] `product_list_streamlit_app_type1.py` のUIラベルと変数名を変更。
@@ -90,4 +98,4 @@
 
 -   [x] `src/shopee_product_filter/app/product_list_streamlit_app_type1.py` のUI上の初期値を「未着手」に設定。
 -   [x] `src/shopee_product_filter/app/product_list_streamlit_app_type1.py` の検索条件への自動追加を抑制。
--   [ ] 動作確認済み。
+-   [x] 動作確認済み.

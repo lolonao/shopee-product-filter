@@ -181,8 +181,13 @@ with st.expander("🧮 Shopee最低仕入れ価格 計算ツール (クリック
                 try:
                     if price_calculator:
                         calculation_result = price_calculator.calculate_cost_price(
-                            price_sgd=selling_price_sgd_input,
+                            country_code="SG", # シンガポールを仮定
+                            target_selling_price_local=selling_price_sgd_input,
                             weight_kg=weight_kg_input,
+                            domestic_shipping=500.0, # 仮の国内送料
+                            profit_rate=20.0, # 仮の利益率
+                            voucher_rate=0.0, # 仮のバウチャー率
+                            is_rebate=False, # 仮のリベート設定
                             length_cm=length_cm_input,
                             width_cm=width_cm_input,
                             height_cm=height_cm_input,

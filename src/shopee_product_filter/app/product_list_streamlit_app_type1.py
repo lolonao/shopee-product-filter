@@ -1,3 +1,16 @@
+import streamlit as st
+import pandas as pd
+import requests
+import logging
+from typing import Dict, Any, Optional, Tuple
+from datetime import datetime
+from pathlib import Path
+
+# shopee_price_pilotから必要なモジュールをインポート
+from shopee_price_pilot.calculator import PriceCalculator
+from shopee_price_pilot.data_loader import load_application_config
+from shopee_price_pilot.exchange import DummyExchangeRateProvider
+
 import sys
 import os
 
@@ -8,31 +21,22 @@ project_root = os.path.abspath(
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import streamlit as st
-import pandas as pd
-import requests
-import logging
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+# --- shopee_price_pilot のデータディレクトリ ---
+SHOPEE_PRICE_PILOT_DATA_DIR = Path("/home/demo/Projects/shopee_price_pilot/data")
 
-# calculator.py を同じディレクトリからインポート
+
+# shopee_price_pilotの設定をロードし、電卓を初期化
 try:
-    # 絶対インポートに変更
-    from src.shopee_product_filter.core.calculator import (
-        calculate_minimum_purchase_price,
-        get_exchange_rate as get_calc_exchange_rate,
-    )
-except ImportError as e:
-    st.error(
-        f"エラー: `calculator.py` のロードに失敗しました。パスを確認してください。詳細: {e}"
-    )
-
-    # フォールバック関数 (インポート失敗時)
-    def calculate_minimum_purchase_price(price, weight):
-        raise NotImplementedError("calculator.py がロードできませんでした。")
-
-    def get_calc_exchange_rate(pair, isDummy=False):
-        raise NotImplementedError("calculator.py がロードできませんでした。")
+    config = load_application_config(data_dir=SHOPEE_PRICE_PILOT_DATA_DIR)
+    # exchange_provider = ExchangeRateProvider(config.exchange_rate_api.api_key) # 本番用
+    exchange_provider = DummyExchangeRateProvider(
+        fixed_rate=110.0
+    )  # 開発用にダミーレートを使用
+    price_calculator = PriceCalculator(config, exchange_provider)
+    st.sidebar.success("価格計算エンジン (pilot) 起動完了")
+except Exception as e:
+    st.sidebar.error(f"価格計算エンジンの起動に失敗: {e}")
+    price_calculator = None
 
 
 # ロギング設定
@@ -99,9 +103,7 @@ def get_cached_exchange_rate_for_display(
             source_message = f"キャッシュされたレート (表示用, {base_currency}-{target_currency}, {last_updated_time.strftime('%Y-%m-%d %H:%M:%S UTC')}時点)"
             return rate, source_message
     try:
-        fetched_rate = get_calc_exchange_rate(
-            f"{base_currency}-{target_currency}", isDummy=False
-        )
+        fetched_rate = exchange_provider.get_rate(f"{base_currency}-{target_currency}")
         if fetched_rate:
             st.session_state[cache_key_rate] = fetched_rate
             st.session_state[cache_key_time] = datetime.utcnow()
@@ -158,6 +160,16 @@ with st.expander("🧮 Shopee最低仕入れ価格 計算ツール (クリック
                 format="%.1f",
                 help="商品の重量をキログラム(kg)で入力してください。例: 0.5 (500gの場合)",
             )
+            st.write("商品サイズ (cm)")
+            length_cm_input = st.number_input(
+                "縦 (cm)", min_value=0.1, value=10.0, step=0.1, format="%.1f"
+            )
+            width_cm_input = st.number_input(
+                "横 (cm)", min_value=0.1, value=10.0, step=0.1, format="%.1f"
+            )
+            height_cm_input = st.number_input(
+                "高さ (cm)", min_value=0.1, value=10.0, step=0.1, format="%.1f"
+            )
         calculate_button = st.form_submit_button(label="最低仕入れ価格を計算する")
     if calculate_button:
         if selling_price_sgd_input <= 0:
@@ -167,9 +179,17 @@ with st.expander("🧮 Shopee最低仕入れ価格 計算ツール (クリック
         else:
             with st.spinner("最低仕入れ価格を計算中です..."):
                 try:
-                    calculation_result = calculate_minimum_purchase_price(
-                        selling_price_sgd_input, weight_kg_input
-                    )
+                    if price_calculator:
+                        calculation_result = price_calculator.calculate_cost_price(
+                            price_sgd=selling_price_sgd_input,
+                            weight_kg=weight_kg_input,
+                            length_cm=length_cm_input,
+                            width_cm=width_cm_input,
+                            height_cm=height_cm_input,
+                        )
+                    else:
+                        st.error("価格計算エンジンが初期化されていません。")
+                        st.stop()
                     st.subheader("🧮 計算結果")
                     # (中略 - 表示部分は前回と同じ)
                     res_col1, res_col2 = st.columns(2)
@@ -181,6 +201,14 @@ with st.expander("🧮 Shopee最低仕入れ価格 計算ツール (クリック
                         st.metric(
                             label="⚖️ 商品重量",
                             value=f"{calculation_result['weight_kg']:.1f} kg",
+                        )
+                        st.metric(
+                            label="📦 容積重量",
+                            value=f"{calculation_result['volumetric_weight_kg']:.1f} kg",
+                        )
+                        st.metric(
+                            label="📊 実効重量",
+                            value=f"{calculation_result['effective_weight_kg']:.1f} kg",
                         )
                         st.metric(
                             label="💹 計算時為替レート",
@@ -620,10 +648,10 @@ if not st.session_state.searched_product_list_df.empty:
                     payload = {}
                     # フォームが送信された場合のみ、変更をチェックしてpayloadに追加
                     if new_status != row.get("sourcing_status"):
-                        payload["sourcing_status"] = (
-                            new_status if new_status else None
-                        )
-                    if new_notes != row.get("sourcing_notes", ""): # row.get()のデフォルト値を考慮
+                        payload["sourcing_status"] = new_status if new_status else None
+                    if new_notes != row.get(
+                        "sourcing_notes", ""
+                    ):  # row.get()のデフォルト値を考慮
                         payload["sourcing_notes"] = new_notes
 
                     if payload:
@@ -634,7 +662,9 @@ if not st.session_state.searched_product_list_df.empty:
                             response_update = requests.put(update_url, json=payload)
                             response_update.raise_for_status()
                             updated_item_data = response_update.json()
-                            st.success(f"商品ID {item_id} のソーシング情報を更新しました！")
+                            st.success(
+                                f"商品ID {item_id} のソーシング情報を更新しました！"
+                            )
                             for (
                                 idx,
                                 r,

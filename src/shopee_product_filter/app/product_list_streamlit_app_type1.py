@@ -3,13 +3,13 @@ import pandas as pd
 import requests
 import logging
 from typing import Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 
 # shopee_price_pilotから必要なモジュールをインポート
 from shopee_price_pilot.calculator import PriceCalculator
 from shopee_price_pilot.data_loader import load_application_config
-from shopee_price_pilot.exchange import DummyExchangeRateProvider
+from shopee_price_pilot.exchange import ExchangeRateProvider, DummyExchangeRateProvider
 
 import sys
 import os
@@ -29,9 +29,7 @@ SHOPEE_PRICE_PILOT_DATA_DIR = Path("/home/demo/Projects/shopee_price_pilot/data"
 try:
     config = load_application_config(data_dir=SHOPEE_PRICE_PILOT_DATA_DIR)
     # exchange_provider = ExchangeRateProvider(config.exchange_rate_api.api_key) # 本番用
-    exchange_provider = DummyExchangeRateProvider(
-        fixed_rate=110.0
-    )  # 開発用にダミーレートを使用
+    exchange_provider = ExchangeRateProvider() # 本番用
     price_calculator = PriceCalculator(config, exchange_provider)
     st.sidebar.success("価格計算エンジン (pilot) 起動完了")
 except Exception as e:
@@ -96,7 +94,7 @@ def get_cached_exchange_rate_for_display(
         last_updated_time = st.session_state[cache_key_time]
         if (
             isinstance(last_updated_time, datetime)
-            and (datetime.utcnow() - last_updated_time).total_seconds()
+            and (datetime.now(UTC) - last_updated_time).total_seconds()
             < EXCHANGE_RATE_CACHE_DURATION_SECONDS
         ):
             rate = st.session_state[cache_key_rate]
@@ -106,7 +104,7 @@ def get_cached_exchange_rate_for_display(
         fetched_rate = exchange_provider.get_rate(f"{base_currency}-{target_currency}")
         if fetched_rate:
             st.session_state[cache_key_rate] = fetched_rate
-            st.session_state[cache_key_time] = datetime.utcnow()
+            st.session_state[cache_key_time] = datetime.now(UTC)
             rate = fetched_rate
             source_message = f"最新レート (表示用, {base_currency}-{target_currency}, Google Financeより)"
         else:
@@ -200,12 +198,12 @@ with st.expander("🧮 Shopee最低仕入れ価格 計算ツール (クリック
                     res_col1, res_col2 = st.columns(2)
                     with res_col1:
                         st.metric(
-                            label="🇸🇬 シンガポール販売価格",
-                            value=f"{calculation_result['selling_price_sgd']:.2f} SGD",
+                            label="🇸🇬 シンガポール販売価格 (入力)",
+                            value=f"{calculation_result['inputs']['target_selling_price_local']:.2f} SGD",
                         )
                         st.metric(
                             label="⚖️ 商品重量",
-                            value=f"{calculation_result['weight_kg']:.1f} kg",
+                            value=f"{calculation_result['inputs']['weight_kg']:.1f} kg",
                         )
                         st.metric(
                             label="📦 容積重量",
@@ -221,35 +219,35 @@ with st.expander("🧮 Shopee最低仕入れ価格 計算ツール (クリック
                         )
                         st.metric(
                             label="✈️ SLS送料 (国際)",
-                            value=f"{calculation_result['sls_fee']:.0f} JPY",
+                            value=f"{calculation_result['sls_fee_jpy']:.0f} JPY",
                         )
                     with res_col2:
                         st.metric(
                             label="🇯🇵 日本円換算 (販売価格)",
-                            value=f"{calculation_result['selling_price_jpy']:.0f} JPY",
+                            value=f"{calculation_result['target_selling_price_jpy']:.0f} JPY",
                         )
                         st.metric(
-                            label="🚚 国内送料 (想定)",
-                            value=f"{calculation_result['domestic_shipping_fee']:.0f} JPY",
+                            label="🚚 国内送料 (入力)",
+                            value=f"{calculation_result['inputs']['domestic_shipping']:.0f} JPY",
                         )
                         st.metric(
                             label="💰 Shopee手数料",
-                            value=f"{calculation_result['shopee_fee']:.0f} JPY ({calculation_result['country_fee_rate'] * 100:.1f}%)",
+                            value=f"{calculation_result['commission_jpy']:.0f} JPY ({config.countries['SG'].commission_rate * 100:.1f}%)",
                         )
                         st.metric(
                             label="📈 想定利益",
-                            value=f"{calculation_result['profit']:.0f} JPY ({calculation_result['profit_margin'] * 100:.1f}%)",
+                            value=f"{calculation_result['profit_jpy']:.0f} JPY",
                         )
                     st.markdown("---")
                     st.subheader("🎯 最低仕入れ価格の目安")
                     price_col1, price_col2 = st.columns(2)
                     with price_col1:
                         st.success(
-                            f"**最低仕入れ価格 (JPY): {calculation_result['minimum_purchase_price_jpy']:.0f} 円**"
+                            f"**最低仕入れ価格 (JPY): {calculation_result['max_cost_price_jpy']:.0f} 円**"
                         )
                     with price_col2:
                         st.info(
-                            f"**最低仕入れ価格 (SGD): {calculation_result['minimum_purchase_price_sgd']:.2f} SGD**"
+                            f"**最低仕入れ価格 (SGD): {calculation_result['max_cost_price_local']:.2f} SGD**"
                         )
                     st.caption(
                         "この金額以下で商品を仕入れることができれば、設定した利益率が見込めます。"

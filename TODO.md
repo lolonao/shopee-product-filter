@@ -99,3 +99,14 @@
 -   [x] `src/shopee_product_filter/app/product_list_streamlit_app_type1.py` のUI上の初期値を「未着手」に設定。
 -   [x] `src/shopee_product_filter/app/product_list_streamlit_app_type1.py` の検索条件への自動追加を抑制。
 -   [x] 動作確認済み.
+
+---
+
+## ISSUE #26: shopee_price_pilot統合による最低仕入れ価格計算機能の強化
+
+- [x] Streamlitアプリ (`product_list_streamlit_app_type1.py`) に `shopee_price_pilot` の計算ロジックを統合。
+- [x] `DummyExchangeRateProvider` の初期化エラーを修正。
+- [x] 不要になった古い計算ロジックとインポートを削除。
+- [x] コードのフォーマットとリンティングを実施。
+- [ ] Streamlitアプリの手動テストと検証（Naoさんによる）。
+- [x] コメントやドキュメンテーションの更新（このタスクで実施）。

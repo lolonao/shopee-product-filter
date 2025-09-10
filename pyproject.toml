@@ -1,0 +1,31 @@
+[project]
+name = "shopee-product-filter"
+version = "v2025.07.09"
+description = "HTMLからShopeeの商品情報を抽出し、データベースで管理、APIとStreamlit UIで操作・分析するシステム。"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "bs4>=0.0.2",
+  "fastapi>=0.116.0",
+  "httpx>=0.28.1",
+  "lxml>=6.0.0",
+  "python-multipart>=0.0.20",
+  "sqlmodel>=0.0.24",
+  "streamlit>=1.46.1",
+  "uvicorn>=0.35.0",
+]
+
+[dependency-groups]
+dev = ["mypy>=1.16.1", "nox>=2025.5.1", "pytest>=8.4.1", "ruff>=0.12.2"]
+
+
+[tool.pyright]
+# [Pyright Configuration](https://microsoft.github.io/pyright/#/configuration?id=pyright-configuration)
+virtualenvPath = "."
+venv = ".venv"
+include = ["src"]
+exclude = ["**/test/**"]
+reportMissingImports = "information"
+
+[tool.setuptools.packages.find]
+where = ["src"]

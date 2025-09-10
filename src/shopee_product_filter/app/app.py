@@ -55,12 +55,13 @@ def initialize_price_calculator():
 
 # --- コールバック関数 ---
 def set_calculator_inputs(price: float, currency: str):
-    """プレビュー欄のボタンが押されたときに、計算機の入力値をセッション状態で更新する"""
+    """プレビュー欄のボタンが押されたときに、計算機の入力値をセッション状態で更新し、エキスパンダーを開く"""
     st.session_state.target_price = price
     # 通貨から国コードを取得し、セッション状態を更新
     country_code = CURRENCY_TO_COUNTRY.get(currency)
     if country_code:
         st.session_state.target_country_code = country_code
+    st.session_state.calculator_expanded = True # 計算機エキスパンダーを開かせる
 
 # --- Main App UI ---
 st.set_page_config(layout="wide", page_title="Shopee Product Prospector")
@@ -123,7 +124,7 @@ COLUMN_MAPPING = {
 }
 
 # デフォルトで表示する列のリスト（日本語表示名）
-DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格", "販売数", "ショップタイプ", "リストタイプ", "商品URL"]
+DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格", "販売数", "ショップタイプ", "リストタイプ", "画像URL", "商品URL"]
 
 # 利用可能な全ての列リスト（日本語表示名）
 ALL_DISPLAY_COLUMNS = list(COLUMN_MAPPING.values())
@@ -143,6 +144,8 @@ if 'target_price' not in st.session_state:
     st.session_state.target_price = 100.0  # 計算機のデフォルト値
 if 'target_country_code' not in st.session_state:
     st.session_state.target_country_code = "SG"  # デフォルトはシンガポール
+if 'calculator_expanded' not in st.session_state:
+    st.session_state.calculator_expanded = False # 計算機エキスパンダーの開閉状態
 
 
 with st.form(key="product_search_form"):
@@ -227,8 +230,13 @@ if not st.session_state.search_results_df.empty:
     edited_df_japanese = st.data_editor(
         df_renamed[final_display_cols],
         key="search_results_editor",
-        # ユーザーがプレビュー列以外を編集できないように設定
-        disabled=[col for col in final_display_cols if col != "プレビュー"]
+        disabled=[col for col in final_display_cols if col != "プレビュー"],
+        column_config={
+            "プレビュー": st.column_config.CheckboxColumn(
+                help="計算ツールに価格を連携したい商品を選択します",
+                width="small"
+            ),
+        },
     )
 
     # プレビューが選択された行を特定 (日本語の列名で判定)
@@ -270,6 +278,26 @@ if not st.session_state.search_results_df.empty:
                         args=(price, currency)
                     )
 
+    # --- CSVダウンロード機能 ---
+    st.markdown("---")
+
+    # ダウンロード対象の列（日本語名）を決定（プレビュー列は除外）
+    download_cols_japanese = [col for col in final_display_cols if col != "プレビュー"]
+
+    # 日本語名に変換済みのデータフレームから、ダウンロード対象の列を抽出
+    df_download = df_renamed[download_cols_japanese]
+
+    # to_csvでBOM付きUTF-8にエンコードし、Excelでの文字化けを防ぐ
+    csv_data = df_download.to_csv(index=False).encode('utf-8-sig')
+
+    st.download_button(
+        label="表示中の列をCSVでダウンロード",
+        data=csv_data,
+        file_name=f"shopee_products_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime='text/csv',
+    )
+
+
 # --- Price Calculator Section ---
 try:
     calculator = initialize_price_calculator()
@@ -278,7 +306,7 @@ except Exception as e:
     st.error(f"価格計算モジュールの初期化中にエラーが発生しました: {e}")
     st.stop()
 
-with st.expander("🧮 最低仕入れ価格 計算ツール (クリックで展開)"):
+with st.expander("🧮 最低仕入れ価格 計算ツール (クリックで展開)", expanded=st.session_state.calculator_expanded):
     st.markdown("Shopeeでの目標販売価格と商品の重量・サイズから、利益を確保できる仕入れ価格の上限を逆算します。")
     
     with st.form(key="cost_price_form"):

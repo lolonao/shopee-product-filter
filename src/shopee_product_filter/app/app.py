@@ -53,6 +53,15 @@ def initialize_price_calculator():
     )
     return PriceCalculator(app_config, exchange_provider)
 
+# --- コールバック関数 ---
+def set_calculator_inputs(price: float, currency: str):
+    """プレビュー欄のボタンが押されたときに、計算機の入力値をセッション状態で更新する"""
+    st.session_state.target_price = price
+    # 通貨から国コードを取得し、セッション状態を更新
+    country_code = CURRENCY_TO_COUNTRY.get(currency)
+    if country_code:
+        st.session_state.target_country_code = country_code
+
 # --- Main App UI ---
 st.set_page_config(layout="wide", page_title="Shopee Product Prospector")
 st.title("🛍️ Shopee Product Prospector")
@@ -119,10 +128,22 @@ DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格", "販売数", "ショップタ�
 # 利用可能な全ての列リスト（日本語表示名）
 ALL_DISPLAY_COLUMNS = list(COLUMN_MAPPING.values())
 
+# 通貨コードとPricePilotの国コードのマッピング
+CURRENCY_TO_COUNTRY = {
+    "SGD": "SG",
+    "PHP": "PH",
+}
+
 
 # Initialize session state
 if 'search_results_df' not in st.session_state:
     st.session_state.search_results_df = pd.DataFrame()
+# プレビューから計算機に値を渡すためのセッション状態
+if 'target_price' not in st.session_state:
+    st.session_state.target_price = 100.0  # 計算機のデフォルト値
+if 'target_country_code' not in st.session_state:
+    st.session_state.target_country_code = "SG"  # デフォルトはシンガポール
+
 
 with st.form(key="product_search_form"):
     st.subheader("絞り込み条件")
@@ -236,6 +257,19 @@ if not st.session_state.search_results_df.empty:
                 if selected_row_dict.get('product_url'):
                     st.markdown(f"[Shopeeで見る]({selected_row_dict['product_url']})")
 
+                # --- プレビューから計算ツールへ値を渡すボタン ---
+                price = selected_row_dict.get('price', 0.0)
+                currency = selected_row_dict.get('currency', '')
+
+                # 対応通貨の場合のみボタンを表示
+                if currency in CURRENCY_TO_COUNTRY:
+                    st.button(
+                        "この価格で仕入れ価格を計算",
+                        key=f"calc_btn_{selected_row_dict['id']}",
+                        on_click=set_calculator_inputs,
+                        args=(price, currency)
+                    )
+
 # --- Price Calculator Section ---
 try:
     calculator = initialize_price_calculator()
@@ -251,8 +285,17 @@ with st.expander("🧮 最低仕入れ価格 計算ツール (クリックで展
         st.subheader("入力項目")
         col1, col2, col3 = st.columns(3)
         with col1:
-            country_code = st.selectbox("販売国", options=supported_countries, index=0)
-            target_selling_price_local = st.number_input("目標販売価格 (現地通貨)", min_value=0.0, value=100.0, format="%.2f")
+            # セッション状態から国コードのデフォルトインデックスを決定
+            country_index = supported_countries.index(st.session_state.target_country_code) if st.session_state.target_country_code in supported_countries else 0
+            country_code = st.selectbox("販売国", options=supported_countries, index=country_index)
+
+            # セッション状態から目標販売価格のデフォルト値を設定
+            target_selling_price_local = st.number_input(
+                "目標販売価格 (現地通貨)",
+                min_value=0.0,
+                value=st.session_state.target_price,
+                format="%.2f"
+            )
             weight_kg = st.number_input("想定重量 (kg)", min_value=0.0, value=0.5, step=0.05, format="%.2f")
         with col2:
             domestic_shipping = st.number_input("国内送料 (円)", min_value=0, value=710)

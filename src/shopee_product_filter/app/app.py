@@ -75,9 +75,30 @@ with st.expander("📤 商品一覧HTMLファイルをアップロードしてDB
 # --- DB Search Section ---
 st.header("🔍 登録済み商品検索")
 
-# Define columns for selection
-ALL_COLUMNS = ["id", "product_url", "product_name", "price", "currency", "image_url", "location", "sold", "shop_type", "list_type", "created_at", "updated_at"]
-DEFAULT_COLUMNS = ["product_name", "price", "sold", "shop_type", "list_type", "product_url"]
+# --- UI表示設定 ---
+# DBカラム名と日本語表示名のマッピング
+# created_at, updated_at はUTCで保存されているため、ユーザーには分かりやすいようにタイムゾーン情報を付記
+COLUMN_MAPPING = {
+    "id": "商品ID",
+    "product_url": "商品URL",
+    "product_name": "商品名",
+    "price": "価格",
+    "currency": "通貨",
+    "image_url": "画像URL",
+    "location": "発送元",
+    "sold": "販売数",
+    "shop_type": "ショップタイプ",
+    "list_type": "リストタイプ",
+    "created_at": "登録日時 (UTC)",
+    "updated_at": "最終更新日時 (UTC)"
+}
+
+# デフォルトで表示する列のリスト（日本語表示名）
+DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格", "販売数", "ショップタイプ", "リストタイプ", "商品URL"]
+
+# 利用可能な全ての列リスト（日本語表示名）
+ALL_DISPLAY_COLUMNS = list(COLUMN_MAPPING.values())
+
 
 # Initialize session state
 if 'search_results_df' not in st.session_state:
@@ -96,7 +117,12 @@ with st.form(key="product_search_form"):
     st.subheader("表示オプション")
     col_opt1, col_opt2 = st.columns([3, 1])
     with col_opt1:
-        selected_columns = st.multiselect("表示する列を選択", options=ALL_COLUMNS, default=DEFAULT_COLUMNS)
+        # 日本語の表示名で列を選択できるようにする
+        selected_display_columns = st.multiselect(
+            "表示する列を選択",
+            options=ALL_DISPLAY_COLUMNS,
+            default=DEFAULT_DISPLAY_COLUMNS
+        )
     with col_opt2:
         limit = st.number_input("最大表示件数", min_value=1, max_value=1000, value=50)
     
@@ -135,23 +161,47 @@ if search_button:
 if not st.session_state.search_results_df.empty:
     st.subheader(f"検索結果: {len(st.session_state.search_results_df)} 件")
     
+    # 選択された表示名に対応するDBカラム名を取得
+    # 逆マッピングを作成
+    REVERSE_COLUMN_MAPPING = {v: k for k, v in COLUMN_MAPPING.items()}
+    selected_db_columns = [REVERSE_COLUMN_MAPPING[disp_col] for disp_col in selected_display_columns if disp_col in REVERSE_COLUMN_MAPPING]
+
+    # 表示用のデータフレームを準備
     df_display = st.session_state.search_results_df.copy()
-    # Add preview column and filter by user selection
+
+    # プレビュー選択用の列を追加
     df_display["プレビュー"] = False
     
-    # Ensure selected columns exist in the dataframe
-    display_cols = ["プレビュー"] + [col for col in selected_columns if col in df_display.columns]
+    # データを表示する前に、カラム名を日本語に変換
+    df_renamed = df_display.rename(columns=COLUMN_MAPPING)
     
-    edited_df = st.data_editor(df_display[display_cols], key="search_results_editor")
+    # 表示する列（日本語名）を決定
+    # プレビュー列と、ユーザーが選択した表示列リスト
+    display_cols_japanese = ["プレビュー"] + selected_display_columns
 
-    selected_rows = edited_df[edited_df["プレビュー"]]
+    # 存在しない列が選択されてもエラーにならないようにフィルタリング
+    final_display_cols = [col for col in display_cols_japanese if col in df_renamed.columns]
 
-    if not selected_rows.empty:
-        st.subheader(f"{len(selected_rows)}件のプレビュー")
-        for index, row_series in selected_rows.iterrows():
-            # Get full data for the selected row from the original dataframe
-            original_row = st.session_state.search_results_df.loc[index]
-            selected_row_dict = original_row.to_dict()
+    # st.data_editor を使用して、日本語化されたデータフレームを表示
+    edited_df_japanese = st.data_editor(
+        df_renamed[final_display_cols],
+        key="search_results_editor",
+        # ユーザーがプレビュー列以外を編集できないように設定
+        disabled=[col for col in final_display_cols if col != "プレビュー"]
+    )
+
+    # プレビューが選択された行を特定 (日本語の列名で判定)
+    selected_rows_japanese = edited_df_japanese[edited_df_japanese["プレビュー"]]
+
+    if not selected_rows_japanese.empty:
+        # 日本語のデータフレームのインデックスは元のデータフレームのインデックスと一致する
+        selected_indices = selected_rows_japanese.index
+
+        st.subheader(f"{len(selected_indices)}件のプレビュー")
+        # 元のデータフレームからプレビュー対象の行を取得
+        for index in selected_indices:
+            selected_row_dict = st.session_state.search_results_df.loc[index].to_dict()
+
             st.markdown("---")
             col_img, col_info = st.columns([1, 4])
             with col_img:

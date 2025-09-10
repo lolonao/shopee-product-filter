@@ -9,6 +9,26 @@ import sys
 from pathlib import Path
 import json
 
+# --- モジュール検索パスの設定 ---
+# 'uv run streamlit run' で実行した際に 'src' 配下のモジュールを正しく見つけられるように、
+# プロジェクトの 'src' ディレクトリをsys.pathに追加します。
+# これにより、`shopee_price_pilot`のようなベンダー化されたライブラリをインポート可能にします。
+try:
+    # 現在のファイルの絶対パスからプロジェクトルートを特定
+    # (shopee-product-filter/src/shopee_product_filter/app/app.py)
+    # 3階層上がプロジェクトルート
+    project_root = Path(__file__).resolve().parents[3]
+    src_path = project_root / "src"
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+except IndexError:
+    # ファイル構造が予期したものと異なる場合のエラーハンドリング
+    # スクリプトがプロジェクトルート直下などで実行された場合を想定
+    src_path = Path("./src").resolve()
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+
+
 # --- Vendored Library Imports ---
 from shopee_price_pilot.models import AppConfig, CountrySettings
 from shopee_price_pilot.exchange import ExchangeRateProvider
@@ -174,7 +194,7 @@ if not st.session_state.search_results_df.empty:
     
     # データを表示する前に、カラム名を日本語に変換
     df_renamed = df_display.rename(columns=COLUMN_MAPPING)
-    
+
     # 表示する列（日本語名）を決定
     # プレビュー列と、ユーザーが選択した表示列リスト
     display_cols_japanese = ["プレビュー"] + selected_display_columns

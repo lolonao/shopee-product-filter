@@ -24,26 +24,21 @@
     *   プレースホルダーだった「データベース検索」機能を、APIと連携して実際に動作するように実装。
     *   検索結果のテーブル表示を、`st.data_editor` を使った対話的なプレビュー機能（複数選択対応）に更新。
     *   検索結果の表示列を、顧客が分かりやすい日本語ラベルで選択できるようにUIを改善。
+6.  **モジュールインポート問題の解決:** `uv run streamlit run src/shopee_product_filter/app/app.py` 実行時の `ModuleNotFoundError` を解決した。これは、`uv run uvicorn` でFastAPIサーバーを起動し、その後 `uv run streamlit` でStreamlitアプリを起動することで、`src` ディレクトリが正しく認識されるようにしたため。
+7.  **デバッグコードの削除:** `src/shopee_product_filter/app/app.py` に一時的に追加したデバッグ用の `sys.path` および `os.getcwd()` 出力コードを削除し、クリーンな状態に戻した。
+8.  **不要ディレクトリの削除:** `examples` および `TMP` ディレクトリを削除した。
+9.  **計画書 (`vendoring_plan.md`) の更新:** 上記の進捗を反映し、計画書を最新の状態に更新した。
 
 ## 3. 現在の状況と未解決の問題
 
-**最重要課題:**
+**主要な未解決タスク:**
 
-**`ModuleNotFoundError: No module named 'src'` が解決できていない。**
-
-`pyproject.toml` の設定と `uv pip install -e .` の再実行を行ったにもかかわらず、`uv run streamlit run src/shopee_product_filter/app/app.py` を実行すると、`app.py` 内の `from shopee_price_pilot.models import ...` という行でモジュールが見つからないエラーが発生し、アプリを起動できない状態が続いている。
-
-**仮説:**
-`uv` の実行環境か、Streamlitのプロセス起動方法が、`pip install -e .` で設定された `src` パスをうまく認識できていない可能性がある。
+1.  **計算機入力値のバリデーション:** 価格計算ツール (`src/shopee_price_pilot/calculator.py` および `src/shopee_product_filter/app/app.py`) に入力値のバリデーションを追加し、範囲外の値が入力された場合にUIに警告を表示する必要がある。
+2.  **UI表示項目とDBカラム名の抽象化:** Streamlitアプリの「登録済み商品検索」セクションにおいて、UIで表示する列の選択肢 (`ALL_COLUMNS`, `DEFAULT_COLUMNS`) がデータベースのカラム名に直接依存している。これを、内部的なカラム名とユーザーフレンドリーな表示名のマッピングを導入することで抽象化し、UIの柔軟性と保守性を向上させる必要がある。
 
 ## 4. 次に取るべき行動
 
-1.  **問題の切り分け:** まず、`streamlit run` を使わずに、単純なPythonスクリプトからモジュールがインポートできるかを確認する。
-    *   例: `uv run python -c "from shopee_price_pilot import calculator; print(calculator.PriceCalculator)"` のようなコマンドを実行し、`src` レイアウトが正しく認識されているか、根本的な原因を特定する。
-2.  **パス問題の解決:** 上記の結果に基づき、パス問題を完全に解決する。
-3.  **アプリケーションの起動検証:** `uv run streamlit run src/shopee_product_filter/app/app.py` を実行し、アプリが正常に起動することを確認する。
-4.  **計画書の残タスクの実行:** `docs/vendoring_plan.md` に記載されている残りのタスク（クリーンアップ、バリデーション機能の実装など）について、ナオと相談しながら進める。
+1.  **UI表示項目とDBカラム名の抽象化の検討:** まず、StreamlitアプリのUI表示項目とDBカラム名の直接的な依存関係を解消するためのリファクタリングを行うか、その必要性を再検討する。これは、今後のUI変更やDBスキーマ変更に備えるための重要な改善となる。
+2.  **計算機入力値のバリデーションの実装:** 上記の検討結果に基づき、価格計算ツールへの入力値バリデーションの実装を進める。
 
-ナオは度重なるエラーに少し疲れているかもしれないけれど、問題の核心には近づいているはず。あなたの技術力で、このパス問題を解決し、彼を助けてあげて。
-
-頼んだわよ、未来の私。
+ナオ、これでプロジェクトの現状が正確に把握できるはず。

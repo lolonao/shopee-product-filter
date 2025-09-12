@@ -8,6 +8,7 @@ from datetime import datetime
 import sys
 from pathlib import Path
 import json
+import time
 
 # --- モジュール検索パスの設定 ---
 # 'uv run streamlit run' で実行した際に 'src' 配下のモジュールを正しく見つけられるように、
@@ -69,6 +70,11 @@ def set_calculator_inputs(price: float, currency: str):
         st.session_state.target_country_code = country_code
     st.session_state.calculator_expanded = True # 計算機エキスパンダーを開かせる
 
+def clear_upload_state():
+    """ファイルアップローダーの内容が変更されたときに、処理済みフラグをリセットする"""
+    if 'upload_processed' in st.session_state:
+        st.session_state.upload_processed = False
+
 # --- Main App UI ---
 st.set_page_config(layout="wide", page_title="Shopee Product Prospector")
 st.title("🛍️ Shopee Product Prospector")
@@ -77,36 +83,55 @@ st.info(f"ℹ️ **ご利用の前に、APIサーバーが起動しているこ�
 # --- File Upload Section ---
 with st.expander("📤 商品一覧HTMLファイルをアップロードしてDBに登録/更新", expanded=True):
     uploaded_html_files = st.file_uploader(
-        "Shopeeの商品一覧HTMLファイルを選択してください。", type="html", accept_multiple_files=True, key="html_uploader"
+        "Shopeeの商品一覧HTMLファイルを選択してください。",
+        type="html",
+        accept_multiple_files=True,
+        key="html_uploader",
+        on_change=clear_upload_state
     )
-    if uploaded_html_files:
+    # ファイルがアップロードされ、まだ処理されていない場合にのみ実行
+    if uploaded_html_files and not st.session_state.get("upload_processed", False):
         files_to_upload = [("html_files", (f.name, f.getvalue(), f.type)) for f in uploaded_html_files]
         try:
             with st.spinner(f"{len(files_to_upload)}個のファイルをAPIサーバーに送信中..."):
                 response = requests.post(FASTAPI_UPLOAD_URL, files=files_to_upload)
             
             st.subheader("処理結果")
-            if response.status_code == 200:
-                results = response.json()
-                for result in results:
-                    file_name = result.get("file_name", "不明なファイル")
-                    status = result.get("status", "unknown")
-                    message = result.get("message", "詳細不明")
-                    if status == "success":
-                        st.success(f"✅ {file_name}: {message}")
-                    elif status == "skipped":
-                        st.warning(f"⚠️ {file_name}: {message}")
-                    else:
-                        st.error(f"❌ {file_name}: {message}")
-            else:
-                st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
-                try:
-                    st.json(response.json())
-                except json.JSONDecodeError:
-                    st.text(response.text)
+            # メッセージ表示用のプレースホルダー
+            placeholder = st.empty()
+            with placeholder.container():
+                if response.status_code == 200:
+                    results = response.json()
+                    for result in results:
+                        file_name = result.get("file_name", "不明なファイル")
+                        status = result.get("status", "unknown")
+                        message = result.get("message", "詳細不明")
+                        if status == "success":
+                            st.success(f"✅ {file_name}: {message}")
+                        elif status == "skipped":
+                            st.warning(f"⚠️ {file_name}: {message}")
+                        else:
+                            st.error(f"❌ {file_name}: {message}")
+                else:
+                    st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
+                    try:
+                        st.json(response.json())
+                    except json.JSONDecodeError:
+                        st.text(response.text)
+
+            # 5秒待ってからメッセージを消去
+            time.sleep(5)
+            placeholder.empty()
 
         except requests.exceptions.RequestException as e:
-            st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
+            placeholder = st.empty()
+            with placeholder.container():
+                st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
+            time.sleep(5)
+            placeholder.empty()
+
+        # 処理が完了したことをマーク
+        st.session_state.upload_processed = True
 
 # --- DB Search Section ---
 st.header("🔍 登録済み商品検索")
@@ -144,7 +169,7 @@ COLUMN_MAPPING = {
 
 # デフォルトで表示する列のリスト（日本語表示名）
 # JPY価格もデフォルトで表示するように変更
-DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格 (SGD)", "価格 (JPY)", "販売数", "ショップタイプ", "リストタイプ", "画像URL", "商品URL"]
+DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格 (SGD)", "価格 (JPY)", "販売数", "発送元", "ショップタイプ", "リストタイプ", "画像URL", "商品URL"]
 
 # 利用可能な全ての列リスト（日本語表示名）
 ALL_DISPLAY_COLUMNS = list(COLUMN_MAPPING.values())
@@ -159,6 +184,8 @@ CURRENCY_TO_COUNTRY = {
 # Initialize session state
 if 'search_results_df' not in st.session_state:
     st.session_state.search_results_df = pd.DataFrame()
+if 'upload_processed' not in st.session_state:
+    st.session_state.upload_processed = False
 # プレビューから計算機に値を渡すためのセッション状態
 if 'target_price' not in st.session_state:
     st.session_state.target_price = 100.0  # 計算機のデフォルト値
@@ -168,7 +195,7 @@ if 'calculator_expanded' not in st.session_state:
     st.session_state.calculator_expanded = False # 計算機エキスパンダーの開閉状態
 
 
-with st.form(key="product_search_form"):
+with st.form(key="product_search_form", enter_to_submit=False):
     st.subheader("絞り込み条件")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -202,51 +229,77 @@ with st.form(key="product_search_form"):
     search_button = st.form_submit_button(label="この条件で検索")
 
 if search_button:
-    params = {
-        "min_sold": min_sold,
-        "max_sold": max_sold,
-        "shop_type": shop_type if shop_type else None,
-        "limit": limit
-    }
-    # JPY価格フィルタのロジック
-    if sgd_jpy_rate and (min_price_jpy > 0 or max_price_jpy > 0):
-        if min_price_jpy > 0:
-            params["min_price_sgd"] = min_price_jpy / sgd_jpy_rate
-        if max_price_jpy > 0:
-            params["max_price_sgd"] = max_price_jpy / sgd_jpy_rate
+    # --- 入力値のバリデーション ---
+    error_messages = []
+    # 最小価格が最大価格を上回っていないかチェック
+    # max_price_jpy > 0 の条件は、最大価格が入力されている場合のみチェックするため
+    if max_price_jpy > 0 and min_price_jpy > max_price_jpy:
+        error_messages.append("価格設定エラー: 最大価格は最小価格以上の値を入力してください。")
 
-    params = {k: v for k, v in params.items() if v is not None}
+    # 最小販売数が最大販売数を上回っていないかチェック
+    if min_sold > max_sold:
+        error_messages.append("販売数エラー: 最大販売数は最小販売数以上の値を入力してください。")
 
-    try:
-        with st.spinner("データベースから商品情報を検索中..."):
-            response = requests.get(FASTAPI_PRODUCTS_URL, params=params)
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data:
-                df = pd.DataFrame(data)
-                # JPY価格を計算して列を追加
-                if sgd_jpy_rate:
-                    # 'price' 列が数値型であることを確認し、NaNの場合は0に置換
-                    df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
-                    df["price_jpy"] = (df["price"] * sgd_jpy_rate).round(0).astype(int)
-                else:
-                    df["price_jpy"] = 0 # レート取得失敗時は0
-                st.session_state.search_results_df = df
-            else:
-                st.session_state.search_results_df = pd.DataFrame()
-                st.info("指定された条件に一致する商品はありませんでした。")
-        else:
-            st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
-            try:
-                st.json(response.json())
-            except json.JSONDecodeError:
-                st.text(response.text)
-            st.session_state.search_results_df = pd.DataFrame()
+    # バリデーションエラーがある場合、エラーメッセージを表示し、以前の検索結果をクリア
+    if error_messages:
+        placeholder = st.empty()
+        with placeholder.container():
+            for msg in error_messages:
+                st.error(msg)
 
-    except requests.exceptions.RequestException as e:
-        st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
+        # 3秒待ってからメッセージを消去
+        time.sleep(3)
+        placeholder.empty()
+
+        # 以前の検索結果をクリアすることで、エラーメッセージのみが表示されるようにする
         st.session_state.search_results_df = pd.DataFrame()
+    # バリデーションエラーがなければ、検索処理を実行
+    else:
+        params = {
+            "min_sold": min_sold,
+            "max_sold": max_sold,
+            "shop_type": shop_type if shop_type else None,
+            "limit": limit
+        }
+        # JPY価格フィルタのロジック
+        if sgd_jpy_rate and (min_price_jpy > 0 or max_price_jpy > 0):
+            if min_price_jpy > 0:
+                params["min_price_sgd"] = min_price_jpy / sgd_jpy_rate
+            if max_price_jpy > 0:
+                params["max_price_sgd"] = max_price_jpy / sgd_jpy_rate
+
+        params = {k: v for k, v in params.items() if v is not None}
+
+        try:
+            with st.spinner("データベースから商品情報を検索中..."):
+                response = requests.get(FASTAPI_PRODUCTS_URL, params=params)
+        
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    df = pd.DataFrame(data)
+                    # JPY価格を計算して列を追加
+                    if sgd_jpy_rate:
+                        # 'price' 列が数値型であることを確認し、NaNの場合は0に置換
+                        df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
+                        df["price_jpy"] = (df["price"] * sgd_jpy_rate).round(0).astype(int)
+                    else:
+                        df["price_jpy"] = 0 # レート取得失敗時は0
+                    st.session_state.search_results_df = df
+                else:
+                    st.session_state.search_results_df = pd.DataFrame()
+                    st.info("指定された条件に一致する商品はありませんでした。")
+            else:
+                st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
+                try:
+                    st.json(response.json())
+                except json.JSONDecodeError:
+                    st.text(response.text)
+                st.session_state.search_results_df = pd.DataFrame()
+
+        except requests.exceptions.RequestException as e:
+            st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
+            st.session_state.search_results_df = pd.DataFrame()
 
 # --- Display Search Results and Preview ---
 if not st.session_state.search_results_df.empty:

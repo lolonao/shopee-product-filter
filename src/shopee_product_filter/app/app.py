@@ -203,20 +203,24 @@ with st.form(key="product_search_form"):
 
 if search_button:
     # --- 入力値のバリデーション ---
-    validation_error = False
+    error_messages = []
     # 最小価格が最大価格を上回っていないかチェック
     # max_price_jpy > 0 の条件は、最大価格が入力されている場合のみチェックするため
     if max_price_jpy > 0 and min_price_jpy > max_price_jpy:
-        st.error("価格設定エラー: 最大価格は最小価格以上の値を入力してください。")
-        validation_error = True
+        error_messages.append("価格設定エラー: 最大価格は最小価格以上の値を入力してください。")
 
     # 最小販売数が最大販売数を上回っていないかチェック
     if min_sold > max_sold:
-        st.error("販売数エラー: 最大販売数は最小販売数以上の値を入力してください。")
-        validation_error = True
+        error_messages.append("販売数エラー: 最大販売数は最小販売数以上の値を入力してください。")
 
+    # バリデーションエラーがある場合、エラーメッセージを表示し、以前の検索結果をクリア
+    if error_messages:
+        for msg in error_messages:
+            st.error(msg)
+        # 以前の検索結果をクリアすることで、エラーメッセージのみが表示されるようにする
+        st.session_state.search_results_df = pd.DataFrame()
     # バリデーションエラーがなければ、検索処理を実行
-    if not validation_error:
+    else:
         params = {
             "min_sold": min_sold,
             "max_sold": max_sold,

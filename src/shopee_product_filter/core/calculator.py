@@ -40,32 +40,71 @@ DEFAULT_SETTINGS = {
 
 DUMMY_RATE: float = 108.77
 
-def get_exchange_rate(pair, isDummy=False):
-    if isDummy:
-        return DUMMY_RATE
+import logging
 
+# ロガーの設定
+logger = logging.getLogger(__name__)
+
+def get_exchange_rate(pair: str, isDummy: bool = False) -> float | None:
     """
-    Google Financeから為替レートを取得する関数
+    Google Financeから為替レートを安全に取得する。
+    複数のセレクタを試し、堅牢なエラーハンドリングとロギングを行う。
+    取得失敗時はValueErrorを発生させず、Noneを返す。
 
     Args:
-        pair (str): 通貨ペア（例: "SGD-JPY"）
+        pair (str): 通貨ペア (例: "SGD-JPY")
+        isDummy (bool): ダミーレートを返すかどうか
 
     Returns:
-        float: 為替レート
-
-    Raises:
-        ValueError: 為替レートを取得できなかった場合
+        float | None: 為替レート。取得失敗時はNone。
     """
-    url = f"https://www.google.com/finance/quote/{pair}"
-    response = requests.get(url)
+    if isDummy:
+        logger.info(f"ダミー為替レートを使用: {pair} = {DUMMY_RATE}")
+        return DUMMY_RATE
 
-    if response.status_code == 200:
+    logger.info(f"Google Financeから為替レート取得開始: {pair}")
+    url = f"https://www.google.com/finance/quote/{pair.upper()}"
+    try:
+        # タイムアウトを設定し、リクエストの失敗に備える
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # HTTPエラーがあれば例外を発生させる
+
         soup = BeautifulSoup(response.text, "html.parser")
-        rate_element = soup.find("div", {"class": "YMlKec fxKbKc"})
-        if rate_element:
-            rate_text = rate_element.text.replace(",", "")
-            return float(rate_text)
-    raise ValueError(f"為替レートを取得できませんでした: {pair}")
+
+        # 複数のCSSセレクタを試すことで、ページの変更に対する耐性を高める
+        rate_element_selectors = [
+            "div.YMlKec.fxKbKc",             # オリジナルのセレクタ
+            "div[data-last-price]",          # より安定している可能性のあるデータ属性
+            "span[jsmodel][data-entity-id]"  # もう一つの代替セレクタ
+        ]
+
+        rate_text = None
+        for selector in rate_element_selectors:
+            rate_element = soup.select_one(selector)
+            if rate_element:
+                # セレクタによってテキストの取得方法を分ける
+                rate_text = rate_element.get('data-last-price') if selector == "div[data-last-price]" else rate_element.text
+                if rate_text:
+                    # カンマを削除し、前後の空白を除去
+                    cleaned_rate_text = rate_text.replace(",", "").strip()
+                    if cleaned_rate_text:
+                        logger.info(f"為替レート要素発見 ({selector}): '{cleaned_rate_text}'")
+                        parsed_rate = float(cleaned_rate_text)
+                        logger.info(f"為替レート取得成功: {pair} = {parsed_rate}")
+                        return parsed_rate
+
+        logger.warning(f"為替レートの要素が見つかりませんでした: {pair} (URL: {url})")
+        return None # すべてのセレクタで失敗した場合
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"為替レート取得中にリクエストエラー ({pair}): {e}")
+        return None
+    except (ValueError, TypeError) as e:
+        logger.error(f"為替レートの解析/変換失敗 ({pair}): {e}")
+        return None
+    except Exception as e:
+        logger.error(f"為替レート取得中に予期せぬエラー ({pair}): {e}", exc_info=True)
+        return None
 
 
 def calculate_sls_fee(weight_kg):
@@ -104,6 +143,10 @@ def calculate_minimum_purchase_price(selling_price_sgd, weight_kg):
     # 為替レートを取得
     exchange_rate = get_exchange_rate("SGD-JPY", isDummy=False)
     
+    # レート取得失敗時のハンドリング
+    if exchange_rate is None:
+        raise ValueError("為替レートの取得に失敗したため、最低仕入れ価格を計算できません。")
+
     # シンガポールドルから日本円に変換
     selling_price_jpy = selling_price_sgd * exchange_rate
     

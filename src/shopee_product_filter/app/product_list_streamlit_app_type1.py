@@ -353,25 +353,34 @@ if display_rate_sgd_jpy:
 
 with st.form(key="product_list_search_form_with_sourcing"):  # キー名を変更
     st.subheader("絞り込み条件")
-    # (中略 - 価格、販売数、ショップタイプ、リストタイプの入力は前回と同じ)
-    c1, c2 = st.columns(2)
-    with c1:
-        st.write("価格範囲 (日本円で入力)")
+
+    #【新機能】価格による絞り込み機能を追加
+    st.markdown("##### 💰 価格範囲 (日本円で入力)")
+    price_col1, price_col2 = st.columns(2)
+    with price_col1:
         price_jpy_min = st.number_input(
-            "最小価格 (円)",
+            label="最小価格 (円)",
             min_value=0,
             value=None,
             placeholder="例: 5000",
             key="pl_price_jpy_min_s",
+            help="絞り込みたい価格範囲の最小値を日本円で入力します。",
         )
+    with price_col2:
         price_jpy_max = st.number_input(
-            "最大価格 (円)",
+            label="最大価格 (円)",
             min_value=0,
             value=None,
             placeholder="例: 30000",
             key="pl_price_jpy_max_s",
+            help="絞り込みたい価格範囲の最大値を日本円で入力します。",
         )
-    with c2:
+
+    st.markdown("---") # 他の条件との区切り線
+
+    # その他の絞り込み条件
+    c1, c2 = st.columns(2)
+    with c1:
         st.write("販売数範囲")
         min_sold = st.number_input(
             "最小販売数", min_value=0, value=3, key="pl_min_sold_s"
@@ -379,22 +388,20 @@ with st.form(key="product_list_search_form_with_sourcing"):  # キー名を変�
         max_sold = st.number_input(
             "最大販売数", min_value=0, value=100, key="pl_max_sold_s"
         )
-
-    c3, c4 = st.columns(2)  # ★ソーシングステータス用に列を追加
-    with c3:
+    with c2:
         shop_type_options = ["", "Standard", "Preferred", "Mall", "Official Store"]
         selected_shop_type = st.selectbox(
             "ショップタイプ", options=shop_type_options, index=0, key="pl_shop_type_s"
         )
-    with c4:
-        # ★ソーシングステータスでの絞り込みを追加！
-        selected_sourcing_status = st.selectbox(
-            "ソーシング状況",
-            options=SOURCING_STATUS_OPTIONS,
-            index=0,  # 初期値は空文字（「指定なし」）
-            help="特定のソーシング状況の商品に絞り込みます。",
-            key="pl_sourcing_status_s",
-        )
+
+    # ★ソーシングステータスでの絞り込みを追加！
+    selected_sourcing_status = st.selectbox(
+        "ソーシング状況",
+        options=SOURCING_STATUS_OPTIONS,
+        index=0,  # 初期値は空文字（「指定なし」）
+        help="特定のソーシング状況の商品に絞り込みます。",
+        key="pl_sourcing_status_s",
+    )
 
     st.write("登録日 (期間指定)")
     # (中略 - 登録日の入力は前回と同じ)
@@ -437,22 +444,32 @@ if "searched_product_list_df" not in st.session_state:
     st.session_state.searched_product_list_df = pd.DataFrame()
 
 if search_and_update_button:
+    # 検索パラメータを初期化
     search_params: Dict[str, Any] = {
         "offset": display_start_index,
         "limit": display_limit,
     }
-    # (中略 - 価格、販売数などのパラメータ組み立ては前回と同じ)
+
+    #【重要】価格フィルターのロジック: JPYをSGDに変換
+    # Streamlit画面で入力されたJPYの価格を、SGDに変換してAPIに渡します。
+    # このロジックが機能の中核です。
     if display_rate_sgd_jpy:
-        if price_jpy_min is not None:
+        if price_jpy_min is not None and price_jpy_min > 0:
             search_params["min_price_sgd"] = round(
                 price_jpy_min / display_rate_sgd_jpy, 2
             )
-        if price_jpy_max is not None:
+            logger.info(f"JPY->SGD変換: min_price_sgd = {search_params['min_price_sgd']}")
+        if price_jpy_max is not None and price_jpy_max > 0:
             search_params["max_price_sgd"] = round(
                 price_jpy_max / display_rate_sgd_jpy, 2
             )
-    elif price_jpy_min is not None or price_jpy_max is not None:
+            logger.info(f"JPY->SGD変換: max_price_sgd = {search_params['max_price_sgd']}")
+    elif (price_jpy_min is not None and price_jpy_min > 0) or \
+         (price_jpy_max is not None and price_jpy_max > 0):
         st.warning("為替レートが利用できないため、円での価格指定は無視されます。")
+        logger.warning("為替レートが利用できないため、価格フィルターは適用されませんでした。")
+
+    # その他のフィルター条件をパラメータに追加
     if min_sold is not None:
         search_params["min_sold"] = min_sold
     if max_sold is not None:
@@ -460,7 +477,7 @@ if search_and_update_button:
     if selected_shop_type:
         search_params["shop_type"] = selected_shop_type
     if selected_sourcing_status and selected_sourcing_status != "":
-        search_params["sourcing_status"] = selected_sourcing_status  # ★追加！
+        search_params["sourcing_status"] = selected_sourcing_status
     if start_date_created:
         search_params["start_date_created"] = datetime.combine(
             start_date_created, datetime.min.time()

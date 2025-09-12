@@ -97,8 +97,8 @@ def get_basic_products_with_filters(
     session: ProductListSession,
     offset: int = 0,
     limit: int = Query(default=100, le=200),
-    min_price_sgd: Optional[float] = Query(default=None),
-    max_price_sgd: Optional[float] = Query(default=None),
+    min_price_sgd: Optional[float] = Query(default=None, description="フィルター条件: 最低価格 (SGD)"),
+    max_price_sgd: Optional[float] = Query(default=None, description="フィルター条件: 最高価格 (SGD)"),
     min_sold: Optional[int] = Query(default=None),
     max_sold: Optional[int] = Query(default=None),
     shop_type: Optional[str] = Query(default=None),
@@ -106,22 +106,53 @@ def get_basic_products_with_filters(
     start_date_created: Optional[datetime] = Query(default=None),
     end_date_created: Optional[datetime] = Query(default=None),
 ):
+    """
+    クエリパラメータに基づいてフィルタリングされた商品リスト情報を取得します。
+    この関数には、価格、販売数、ショップタイプなど、複数の絞り込み条件を適用するロジックが含まれています。
+    """
+    logger.info(f"商品リスト検索を開始。offset={offset}, limit={limit}")
+
     conditions = []
-    if min_price_sgd is not None: conditions.append(ProductBasicItem.price >= min_price_sgd)  # type: ignore
-    if max_price_sgd is not None: conditions.append(ProductBasicItem.price <= max_price_sgd)  # type: ignore
-    if min_sold is not None: conditions.append(ProductBasicItem.sold >= min_sold)      # type: ignore
-    if max_sold is not None: conditions.append(ProductBasicItem.sold <= max_sold)      # type: ignore
-    if shop_type: conditions.append(ProductBasicItem.shop_type == shop_type)  # type: ignore
-    if sourcing_status: conditions.append(ProductBasicItem.sourcing_status == sourcing_status) # type: ignore
-    if start_date_created: conditions.append(ProductBasicItem.created_at >= start_date_created) # type: ignore
-    if end_date_created: conditions.append(ProductBasicItem.created_at <= end_date_created) # type: ignore
+
+    #【追加機能】価格による絞り込み条件
+    # min_price_sgd と max_price_sgd パラメータを使用して、データベースの価格(price)をフィルタリングします。
+    if min_price_sgd is not None:
+        logger.info(f"価格フィルター適用: 最低価格 (SGD) >= {min_price_sgd}")
+        conditions.append(ProductBasicItem.price >= min_price_sgd)
+    if max_price_sgd is not None:
+        logger.info(f"価格フィルター適用: 最高価格 (SGD) <= {max_price_sgd}")
+        conditions.append(ProductBasicItem.price <= max_price_sgd)
+
+    # その他の絞り込み条件
+    if min_sold is not None:
+        logger.info(f"販売数フィルター適用: 最小販売数 >= {min_sold}")
+        conditions.append(ProductBasicItem.sold >= min_sold)
+    if max_sold is not None:
+        logger.info(f"販売数フィルター適用: 最大販売数 <= {max_sold}")
+        conditions.append(ProductBasicItem.sold <= max_sold)
+    if shop_type:
+        logger.info(f"ショップタイプフィルター適用: {shop_type}")
+        conditions.append(ProductBasicItem.shop_type == shop_type)
+    if sourcing_status:
+        logger.info(f"ソーシング状況フィルター適用: {sourcing_status}")
+        conditions.append(ProductBasicItem.sourcing_status == sourcing_status)
+    if start_date_created:
+        logger.info(f"登録日フィルター適用: 開始日 >= {start_date_created}")
+        conditions.append(ProductBasicItem.created_at >= start_date_created)
+    if end_date_created:
+        logger.info(f"登録日フィルター適用: 終了日 <= {end_date_created}")
+        conditions.append(ProductBasicItem.created_at <= end_date_created)
     
     statement = select(ProductBasicItem)
     if conditions:
+        logger.info(f"{len(conditions)}個のフィルターを適用します。")
         statement = statement.where(and_(*conditions))
+    else:
+        logger.info("フィルターは適用されませんでした。")
         
     statement = statement.offset(offset).limit(limit).order_by(ProductBasicItem.id)
     products = session.exec(statement).all()
+    logger.info(f"検索結果: {len(products)}件の商品が見つかりました。")
     return products if products else []
 
 

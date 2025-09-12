@@ -28,181 +28,176 @@ MALL_SRC_SUFFIX = "lyamz1z3mayu37"
 OFFICIAL_STORE_SUFFIX = "ly995hjj5h28ab"
 
 
-def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict[str, Optional[Union[str, float, int]]]] | None:
+def _parse_from_json_ld(soup: BeautifulSoup) -> List[Dict[str, any]]:
+    """JSON-LDスクリプトタグから商品情報を抽出する内部関数"""
+    products = []
+    json_ld_scripts = soup.find_all('script', type='application/ld+json')
+    for script in json_ld_scripts:
+        try:
+            data = json.loads(script.string)
+            # 商品リストの場合 (@type: "ItemList")
+            if data.get('@type') == 'ItemList' and 'itemListElement' in data:
+                for item in data['itemListElement']:
+                    product_data = item.get('item', {})
+                    if product_data.get('@type') == 'Product':
+                        offer = product_data.get('offers', [{}])[0]
+                        products.append({
+                            "product_name": product_data.get('name'),
+                            "price": offer.get('price'),
+                            "currency": offer.get('priceCurrency'),
+                            "image_url": product_data.get('image'),
+                            "product_url": product_data.get('url'),
+                            "location": None, # JSON-LDからは取得が難しい場合が多い
+                            "sold": 0, # JSON-LDに販売数はない
+                            "shop_type": 'Standard', # JSON-LDにショップタイプはない
+                        })
+            # 単一商品ページの場合 (@type: "Product")
+            elif data.get('@type') == 'Product':
+                offer = data.get('offers', [{}])[0]
+                products.append({
+                    "product_name": data.get('name'),
+                    "price": offer.get('price'),
+                    "currency": offer.get('priceCurrency'),
+                    "image_url": data.get('image'),
+                    "product_url": data.get('url'),
+                    "location": None,
+                    "sold": 0,
+                    "shop_type": 'Standard',
+                })
+        except (json.JSONDecodeError, AttributeError, IndexError):
+            continue
+    return products
+
+def _parse_from_html_selectors(soup: BeautifulSoup) -> List[Dict[str, any]]:
+    """従来のCSSセレクタベースで商品情報を抽出する内部関数"""
+    products = []
+
+    items = []
+    list_type = "不明"
+    shop_items = soup.select('div.shop-search-result-view > div.row > div.shop-search-result-view__item')
+    search_category_items = soup.select('li.col-xs-2-4.shopee-search-item-result__item')
+    data_sqe_items = soup.select('div[data-sqe="item"]')
+
+    if shop_items:
+        items.extend(shop_items)
+        if list_type == "不明": list_type = "ショップ"
+    if search_category_items:
+        items.extend(search_category_items)
+        if list_type == "不明": list_type = "検索/カテゴリー"
+    if data_sqe_items:
+        items.extend(data_sqe_items)
+        if list_type == "不明": list_type = "汎用"
+
+    unique_items_dict = {str(item): item for item in items}
+    items_to_process = list(unique_items_dict.values())
+
+    if not items_to_process: return []
+
+    for item in items_to_process:
+        product_info: Dict[str, Optional[Union[str, float, int]]] = {
+            "product_name": None, "price": None, "currency": None, "image_url": None,
+            "product_url": None, "location": None, "sold": 0, "shop_type": 'Standard'
+        }
+        try:
+            link_tag = item.select_one('a')
+            if link_tag and link_tag.has_attr('href'): product_info['product_url'] = link_tag['href']
+
+            name_div = item.select_one('div.line-clamp-2, div[class*="name"]')
+            if name_div: product_info['product_name'] = name_div.get_text(strip=True)
+
+            price_container = item.select_one('div[class*="price"]')
+            if price_container:
+                price_text = price_container.get_text(strip=True)
+                price_match = re.search(r'([\d,.]+)', price_text)
+                if price_match: product_info['price'] = float(price_match.group(1).replace(',', ''))
+                if product_info['price'] is not None: product_info['currency'] = 'SGD'
+
+            footer = item.select_one('div[class*="footer"]')
+            if footer:
+                location_tag = footer.select_one('div:last-child')
+                if location_tag and not any(c.isdigit() for c in location_tag.get_text(strip=True)):
+                    product_info['location'] = location_tag.get_text(strip=True)
+
+            sold_div = item.select_one('div[class*="sold"]')
+            if sold_div:
+                sold_text = sold_div.get_text(strip=True)
+                match = re.search(r'([\d,.]+)([kK])?', sold_text)
+                if match:
+                    num = float(match.group(1).replace(',', ''))
+                    if match.group(2) and match.group(2).lower() == 'k': num *= 1000
+                    product_info['sold'] = int(num)
+
+            if item.select_one('img[src*="mall"], div[class*="official-shop-badge"]'): product_info['shop_type'] = 'Mall'
+            elif item.select_one('img[src*="preferred"]'): product_info['shop_type'] = 'Preferred'
+
+            products.append(product_info)
+        except Exception:
+            continue
+    return products
+
+
+def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict[str, Optional[Union[str, float, int]]]]:
     """
     HTMLファイルを読み込み、商品情報を抽出する。
-    - すべての可能性のあるセレクタを試し、結果を結合して全商品を取得する。
-    - sold_countを取得する。
-    - 画像URLをCDN形式に変換する。
-    - ショップタイプを判定する。
-    - ロケーションを堅牢な方法で取得する。
-    - 各フィールドの抽出でエラーが発生しても、可能な限り処理を続行する。
-    - rating および discount は抽出しない。
+    JSON-LDを優先し、失敗した場合はHTMLセレクタにフォールバックする。
     """
     try:
         with open(html_file_path, 'r', encoding='utf-8') as f:
             html_content = f.read()
-    except FileNotFoundError:
-        print(f"エラー: ファイルが見つかりません - {html_file_path}")
-        return []
     except Exception as e:
         print(f"エラー: ファイル読み込み中にエラーが発生しました - {html_file_path}: {e}")
         return []
 
     soup = BeautifulSoup(html_content, 'lxml')
-    products = []
 
-    # --- すべての可能性のあるセレクタを試し、結果を結合する ---
-    items = []
-    list_type = "不明"
+    # 戦略1: JSON-LDから取得を試みる
+    products = _parse_from_json_ld(soup)
 
-    # 1. ショップの商品リスト
-    shop_items = soup.select('div.shop-search-result-view > div.row > div.shop-search-result-view__item')
-    if shop_items:
-        items.extend(shop_items)
-        list_type = "ショップ"
-        print(f"検出されたリストタイプ: {list_type} (アイテム数: {len(shop_items)})")
+    # JSON-LDから取得できた場合、soldとlocationをHTMLから補完する
+    if products:
+        print(f"JSON-LDから {len(products)} 件の商品情報を取得。HTMLから追加情報を補完します。")
 
-    # 2. キーワード検索 と カテゴリー別 の商品リスト
-    search_category_items = soup.select('li.col-xs-2-4.shopee-search-item-result__item')
-    if search_category_items:
-        items.extend(search_category_items)
-        if list_type == "不明": list_type = "検索/カテゴリー"
-        print(f"検出されたリストタイプ: 検索/カテゴリー (アイテム数: {len(search_category_items)})")
+        html_item_map = {}
+        all_html_items = []
+        selectors = ['div.shop-search-result-view > div.row > div.shop-search-result-view__item', 'li.col-xs-2-4.shopee-search-item-result__item', 'div[data-sqe="item"]']
+        for selector in selectors:
+            all_html_items.extend(soup.select(selector))
 
-    # 3. data-sqe="item" の商品リスト (汎用) - より一般的な 'div' を使用
-    data_sqe_items = soup.select('div[data-sqe="item"]')
-    if data_sqe_items:
-        items.extend(data_sqe_items)
-        if list_type == "不明": list_type = "汎用"
-        print(f"検出されたリストタイプ: 汎用 (アイテム数: {len(data_sqe_items)})")
+        for html_item in all_html_items:
+            link_tag = html_item.select_one('a')
+            if link_tag and link_tag.has_attr('href'):
+                href = link_tag['href']
+                if href.startswith('/'): href = 'https://shopee.sg' + href
+                html_item_map[href] = html_item
 
-    # --- 重複の削除 ---
-    # オブジェクトは一意でないため、HTML文字列をキーにして一意性を保つ
-    unique_items_dict = {str(item): item for item in items}
-    items_to_process = list(unique_items_dict.values())
+        for p_info in products:
+            product_url = p_info.get('product_url')
+            if not product_url: continue
+            if product_url.startswith('/'): product_url = 'https://shopee.sg' + product_url
 
-    if not items_to_process:
-        print(f"エラー: 商品リストの抽出箇所を特定できませんでした。({html_file_path})")
-        return [] # アイテムが見つからない場合は空リストを返す
+            matching_html_item = html_item_map.get(product_url)
+            if matching_html_item:
+                if not p_info.get('location'):
+                    footer = matching_html_item.select_one('div[class*="footer"]')
+                    if footer:
+                        location_tag = footer.select_one('div:last-child')
+                        if location_tag and not any(c.isdigit() for c in location_tag.get_text(strip=True)):
+                            p_info['location'] = location_tag.get_text(strip=True)
 
-    EXTRACT_MAX = 500
-    print(f"合計 {len(items_to_process)} 個のユニークなアイテムが見つかりました。最大 {EXTRACT_MAX} 件まで抽出します。")
-    items_to_process = items_to_process[:EXTRACT_MAX]
-
-
-    for i, item in enumerate(items_to_process):
-        product_info: Dict[str, Optional[Union[str, float, int]]] = {
-            "product_name": None, "price": None, "currency": None,
-            "image_url": None, "product_url": None, "location": None,
-            "sold": 0, "shop_type": 'Standard'
-        }
-
-        # --- Extract Product URL ---
-        try:
-            link_tag = item.find('a', href=True)
-            if link_tag:
-                product_info['product_url'] = link_tag['href']
-        except Exception as e:
-            print(f"  アイテム {i+1}: product_url 抽出エラー: {e}")
-
-        # --- Extract Image URL ---
-        try:
-            image_tag = item.find('img')
-            if image_tag:
-                src = image_tag.get('data-src') or image_tag.get('src')
-                if isinstance(src, str):
-                    if src.startswith('http'):
-                        product_info['image_url'] = src
-                    else:
-                        # 画像ファイル名らしき部分を抽出
-                        match = re.search(r'([a-zA-Z0-9_]+\.(?:jpg|jpeg|png|webp))$', src)
+                if not p_info.get('sold') or p_info.get('sold') == 0:
+                    sold_div = matching_html_item.select_one('div[class*="sold"]')
+                    if sold_div:
+                        sold_text = sold_div.get_text(strip=True)
+                        match = re.search(r'([\d,.]+)([kK])?', sold_text)
                         if match:
-                            product_info['image_url'] = f"{SHOPEE_SG_IMAGE_BASE_URL}{match.group(1)}"
-        except Exception as e:
-            print(f"  アイテム {i+1}: image_url 抽出エラー: {e}")
+                            num = float(match.group(1).replace(',', ''))
+                            if match.group(2) and match.group(2).lower() == 'k': num *= 1000
+                            p_info['sold'] = int(num)
+        return products
 
-        # --- Extract Location (堅牢化) ---
-        try:
-            location = None
-            # 戦略1: フッター領域から探す
-            footer = item.select_one('div[class*="footer"]')
-            if footer:
-                # フッター内の最後のdiv/spanが地名であることが多い
-                location_candidates = footer.select('div, span')
-                if location_candidates:
-                    # 後ろから探索する（"sold"の前の要素が地名である可能性）
-                    for loc_cand in reversed(location_candidates):
-                        text = loc_cand.get_text(strip=True)
-                        # 数字や"sold"を含まない、短いテキストを地名とみなす
-                        if text and not any(char.isdigit() for char in text) and 'sold' not in text.lower() and len(text) < 30:
-                            location = text
-                            break
-            # 戦略2: 全体から"location"という単語を含むクラスを持つ要素を探す
-            if not location:
-                location_tag = item.select_one('div[class*="location"]')
-                if location_tag:
-                    location = location_tag.get_text(strip=True)
-
-            product_info['location'] = location
-        except Exception as e:
-            print(f"  アイテム {i+1}: location 抽出エラー: {e}")
-
-        # --- Extract Product Name and Shop Type ---
-        try:
-            name_div = item.select_one('div.line-clamp-2, div[class*="name"], div[class*="Name"]')
-            if name_div:
-                product_info['product_name'] = name_div.get_text(strip=True)
-
-            # Shop Type
-            if item.select_one('img[src*="mall"]'):
-                product_info['shop_type'] = 'Mall'
-            elif item.select_one('img[src*="preferred"]'):
-                product_info['shop_type'] = 'Preferred'
-        except Exception as e:
-            print(f"  アイテム {i+1}: product_name/shop_type 抽出エラー: {e}")
-
-        # --- Extract Price and Currency ---
-        try:
-            price_text_candidates = item.select('div[class*="price"]')
-            price_text = ""
-            if price_text_candidates:
-                price_text = price_text_candidates[-1].get_text(strip=True) # 最も内側の価格表示を選ぶ
-
-            if price_text:
-                price_match = re.search(r'([\d,.]+)', price_text)
-                if price_match:
-                    product_info['price'] = float(price_match.group(1).replace(',', ''))
-
-                currency_match = re.search(r'([$RM¥])', price_text) # Add more currency symbols if needed
-                if currency_match:
-                    product_info['currency'] = "SGD" if currency_match.group(1) == "$" else currency_match.group(1)
-                elif product_info['price'] is not None: # 価格が見つかればデフォルト通貨を設定
-                    product_info['currency'] = 'SGD' # Default to SGD
-        except Exception as e:
-            print(f"  アイテム {i+1}: price/currency 抽出エラー: {e}")
-
-        # --- Extract Sold Count ---
-        try:
-            sold_text = ""
-            sold_candidates = item.select('div, span')
-            for cand in sold_candidates:
-                text = cand.get_text(strip=True)
-                if 'sold' in text.lower():
-                    sold_text = text
-                    break
-
-            if sold_text:
-                match = re.search(r'([\d,.]+)([kK])?', sold_text)
-                if match:
-                    num = float(match.group(1).replace(',', ''))
-                    if match.group(2) and match.group(2).lower() == 'k':
-                        num *= 1000
-                    product_info['sold'] = int(num)
-        except Exception as e:
-            print(f"  アイテム {i+1}: sold count 抽出エラー: {e}")
-
-        products.append(product_info)
+    print("JSON-LDからの取得に失敗、または情報がありませんでした。HTMLセレクタによる解析にフォールバックします。")
+    products = _parse_from_html_selectors(soup)
+    print(f"HTMLセレクタから {len(products)} 件の商品情報を取得しました。")
 
     return products
 

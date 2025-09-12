@@ -202,24 +202,39 @@ with st.form(key="product_search_form"):
     search_button = st.form_submit_button(label="この条件で検索")
 
 if search_button:
-    params = {
-        "min_sold": min_sold,
-        "max_sold": max_sold,
-        "shop_type": shop_type if shop_type else None,
-        "limit": limit
-    }
-    # JPY価格フィルタのロジック
-    if sgd_jpy_rate and (min_price_jpy > 0 or max_price_jpy > 0):
-        if min_price_jpy > 0:
-            params["min_price_sgd"] = min_price_jpy / sgd_jpy_rate
-        if max_price_jpy > 0:
-            params["max_price_sgd"] = max_price_jpy / sgd_jpy_rate
+    # --- 入力値のバリデーション ---
+    validation_error = False
+    # 最小価格が最大価格を上回っていないかチェック
+    # max_price_jpy > 0 の条件は、最大価格が入力されている場合のみチェックするため
+    if max_price_jpy > 0 and min_price_jpy > max_price_jpy:
+        st.error("価格設定エラー: 最大価格は最小価格以上の値を入力してください。")
+        validation_error = True
 
-    params = {k: v for k, v in params.items() if v is not None}
+    # 最小販売数が最大販売数を上回っていないかチェック
+    if min_sold > max_sold:
+        st.error("販売数エラー: 最大販売数は最小販売数以上の値を入力してください。")
+        validation_error = True
 
-    try:
-        with st.spinner("データベースから商品情報を検索中..."):
-            response = requests.get(FASTAPI_PRODUCTS_URL, params=params)
+    # バリデーションエラーがなければ、検索処理を実行
+    if not validation_error:
+        params = {
+            "min_sold": min_sold,
+            "max_sold": max_sold,
+            "shop_type": shop_type if shop_type else None,
+            "limit": limit
+        }
+        # JPY価格フィルタのロジック
+        if sgd_jpy_rate and (min_price_jpy > 0 or max_price_jpy > 0):
+            if min_price_jpy > 0:
+                params["min_price_sgd"] = min_price_jpy / sgd_jpy_rate
+            if max_price_jpy > 0:
+                params["max_price_sgd"] = max_price_jpy / sgd_jpy_rate
+
+        params = {k: v for k, v in params.items() if v is not None}
+
+        try:
+            with st.spinner("データベースから商品情報を検索中..."):
+                response = requests.get(FASTAPI_PRODUCTS_URL, params=params)
         
         if response.status_code == 200:
             data = response.json()

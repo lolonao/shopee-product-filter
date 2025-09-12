@@ -11,39 +11,32 @@
 -   **RESTful API**: FastAPIを使用して、データベースに保存された商品情報へのアクセス、検索、ソーシング状況の更新を行うためのAPIエンドポイントを提供します。
 -   **Streamlitユーザーインターフェース**: 直感的で使いやすいWeb UIを通じて、以下の操作が可能です。
     -   商品一覧HTMLファイルのアップロードとデータベースへの登録/更新。
-    -   データベース内の商品情報を様々な条件（価格帯、販売数、ショップタイプ、リストタイプ、登録日など）で検索・絞り込み。
-    -   検索結果の表示、CSV/JSON形式でのダウンロード。
+    -   データベース内の商品情報を条件（販売数、ショップタイプ）で検索・絞り込み。
+    -   検索結果を表形式でインタラクティブに表示し、プレビューしたい商品を選択可能。
     -   個々の商品の画像プレビューと詳細情報の確認。
-    -   商品のソーシング状況（未着手、調査中、仕入先発見など）とメモの記録・更新。
-    -   Shopeeシンガポールでの販売価格と重量から、日本での最低仕入れ価格を計算するツール。
--   **為替レートの自動取得とキャッシュ**: 為替レートを自動で取得し、Streamlitアプリ内でキャッシュすることで、計算の精度と効率を向上させます。
+    -   **最低仕入れ価格計算機能**: `shopee_price_pilot` ライブラリを活用し、Shopeeでの目標販売価格、商品重量、サイズ等から、利益を確保できる日本での仕入れ価格上限を逆算します。
+-   **為替レートの自動取得とキャッシュ**: 為替レートAPIを介してレートを自動で取得し、一定期間キャッシュすることで、計算の精度と効率を向上させます。
 
 ## プロジェクト構造
 
 ```
 .
 ├── data/
-│   └── shopee_product_list_data.db  # 商品情報データベース
+│   ├── shopee_product_list_data.db  # 商品情報データベース
+│   └── ...
 ├── docs/
-│   └── 起動方法.md                  # 起動方法と開発セットアップのドキュメント
+│   └── ...
 ├── src/
-│   ├── __init__.py
+│   ├── shopee_price_pilot/          # 価格計算ライブラリ（ベンダー化）
+│   │   ├── calculator.py            # 価格計算ロジック
+│   │   ├── models.py                # データモデル
+│   │   └── ...
 │   └── shopee_product_filter/       # メインアプリケーションパッケージ
-│       ├── __init__.py
 │       ├── api/                     # FastAPIアプリケーション関連
-│       │   └── product_list_api.py  # FastAPIサーバーのメインファイル
-│       ├── app/                     # Streamlitアプリケーション関連
-│       │   ├── product_list_streamlit_app_type1.py # Streamlit UI (タイプ1)
-│       │   └── product_list_streamlit_app_type2.py # Streamlit UI (タイプ2)
-│       ├── core/                    # コアロジック（パーサー、計算機など）
-│       │   ├── calc_buy_price.py
-│       │   ├── calculator.py        # 価格計算ロジック
+│       │   ├── product_list_api.py  # FastAPIサーバーのメインファイル
 │       │   └── parse_product_list.py # HTMLパーサー
-│       └── experiments/             # 実験的なスクリプトや一時的なコード
-│           └── parse_product_list/
-│               ├── parse_category_products.py
-│               ├── parse_search_products.py
-│               └── parse_shop_products.py
+│       └── app/                     # Streamlitアプリケーション関連
+│           └── app.py               # Streamlit UI
 ├── .gitignore
 ├── pyproject.toml                   # プロジェクト設定と依存関係
 ├── README.md                        # このファイル
@@ -81,7 +74,7 @@ uv run uvicorn src.shopee_product_filter.api.product_list_api:product_list_app -
 FastAPIサーバーが起動していることを確認した後、別のターミナルで以下のコマンドを実行してStreamlitアプリケーションを起動します。
 
 ```bash
-uv run streamlit run src/shopee_product_filter/app/product_list_streamlit_app_type1.py
+uv run streamlit run src/shopee_product_filter/app/app.py
 ```
 
 アプリケーションが起動したら、ブラウザで表示されるURL（通常は [http://localhost:8501](http://localhost:8501)）にアクセスしてください。

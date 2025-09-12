@@ -21,15 +21,11 @@ dev = ["mypy>=1.16.1", "nox>=2025.5.1", "pytest>=8.4.1", "ruff>=0.12.2"]
 
 [tool.pyright]
 # [Pyright Configuration](https://microsoft.github.io/pyright/#/configuration?id=pyright-configuration)
-venvPath = "."
+virtualenvPath = "."
 venv = ".venv"
 include = ["src"]
 exclude = ["**/test/**"]
 reportMissingImports = "information"
-# Other common settings:
-# venvPath: Specifies the path to your project's virtual environment.
-# venv: Specifies the name of your project's virtual environment.
-# pythonPath: Specifies the path to the Python interpreter.
-# extraPaths: Allows you to specify additional paths to include in the type checking process.
-# report* settings: Control the severity of various diagnostic messages (e.g., reportUnusedClass, reportPrivateImport).
-# typeCheckingMode: Configures the strictness of type checking (e.g., basic, strict).
+
+[tool.setuptools.packages.find]
+where = ["src"]

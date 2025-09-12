@@ -1,0 +1,19 @@
+{
+  "commission_rates": {
+    "SG": 0.13,
+    "PH": 0.056
+  },
+  "currency_info": {
+    "SG": {
+      "code": "SGD",
+      "pair_to_jpy": "SGD=X"
+    },
+    "PH": {
+      "code": "PHP",
+      "pair_to_jpy": "PHP=X"
+    }
+  },
+  "api": {
+    "exchange_rate_cache_seconds": 3600
+  }
+}

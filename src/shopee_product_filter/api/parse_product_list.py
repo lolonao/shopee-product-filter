@@ -52,6 +52,8 @@ def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict
 
     soup = BeautifulSoup(html_content, 'lxml')
     products = []
+    list_type = "不明" # リストタイプを保持する変数
+
     # 商品リストのタイプを判定し、アイテムのリストを取得
     # ショップの商品リスト
     shop_items = soup.select('div.shop-search-result-view > div.row > div.shop-search-result-view__item')
@@ -62,11 +64,17 @@ def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict
 
 
     if shop_items:
+        print(f"検出されたリストタイプ: ショップリスト ({html_file_path})")
         items = shop_items
+        list_type = "ショップ"
     elif search_category_items: # キーワード検索とカテゴリー別のリストに対応
+        print(f"検出されたリストタイプ: カテゴリーまたはキーワード検索リスト ({html_file_path})")
         items = search_category_items
+        list_type = "検索/カテゴリー"
     elif data_sqe_items:
+        print(f"検出されたリストタイプ: 汎用アイテムリスト (data-sqe=\"item\") ({html_file_path})")
         items = data_sqe_items
+        list_type = "汎用"
     else:
         print(f"エラー: 商品リストの抽出箇所を特定できませんでした。({html_file_path})")
         return None # 商品リストが見つからなかった場合はNoneを返す
@@ -192,7 +200,7 @@ def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict
         try:
             location = None
             # 1. Try the primary selector (known class structure) - Corrected escaping
-            location_tag = item.select_one('div.flex.items-center.space-x-1.max-w-full span.ml-\\[3px\\]')
+            location_tag = item.select_one('div.flex.items-center.space-x-1.max-w-full span.ml-\[3px\]')
             if isinstance(location_tag, Tag):
                  location = location_tag.get_text(strip=True)
 
@@ -291,7 +299,7 @@ def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict
                             elif preferred_mall_suffix == OFFICIAL_STORE_SUFFIX:
                                 shop_type = 'Official Store'
                             # Default 'Standard' is already set
-                        except Exception as img_e:
+                        except Exception as img_e: 
                              pass # Suppress frequent image processing errors unless crucial
 
             product_info['product_name'] = product_name
@@ -400,7 +408,7 @@ def parse_shopee_shop_products_from_file_final(html_file_path: str) -> List[Dict
 
 
         products.append(product_info)
-        # print(f"  アイテム {i+1} 処理完了。") # 各アイテムの完了を表示 (詳細ログが必要なら)
+        # print(f"  アイテム {i+1} 処理完了。") # 各アイテムの完了を表示 (詳細ログが必要なら) 
 
 
     # print("全てのアイテムの処理が完了しました。") # 全アイテム処理完了を表示
@@ -523,4 +531,3 @@ if __name__ == "__main__":
     else:
         print("商品リストの解析に失敗しました（リストのコンテナが見つかりませんでした）。")
     print("--- 処理終了 ---") # 処理終了を示すメッセージ
-

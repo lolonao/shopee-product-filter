@@ -46,11 +46,17 @@ logger = logging.getLogger(__name__)
 
 # --- Data Loading and Initialization ---
 @st.cache_resource
-def initialize_price_calculator():
+def initialize_exchange_rate_provider():
+    """為替レートプロバイダーを初期化してキャッシュする"""
     app_config = load_application_config()
-    exchange_provider = ExchangeRateProvider(
+    return ExchangeRateProvider(
         cache_seconds=app_config.api_config.get("exchange_rate_cache_seconds", 3600)
     )
+
+@st.cache_resource
+def initialize_price_calculator():
+    app_config = load_application_config()
+    exchange_provider = initialize_exchange_rate_provider()
     return PriceCalculator(app_config, exchange_provider)
 
 # --- コールバック関数 ---
@@ -105,6 +111,18 @@ with st.expander("📤 商品一覧HTMLファイルをアップロードしてDB
 # --- DB Search Section ---
 st.header("🔍 登録済み商品検索")
 
+# --- 為替レートの取得 ---
+# 初期化関数を呼び出して、キャッシュされたプロバイダーインスタンスを取得
+exchange_provider = initialize_exchange_rate_provider()
+# シンガポールドルから日本円への為替レートを取得
+sgd_jpy_rate = exchange_provider.get_rate("SGD-JPY")
+if sgd_jpy_rate:
+    st.sidebar.success(f"現在の為替レート: 1 SGD ≈ {sgd_jpy_rate:.2f} JPY")
+else:
+    st.sidebar.error("為替レートの取得に失敗しました。価格フィルタリングと表示が不正確になる可能性があります。")
+    # フォールバックとして固定レートを設定することも可能
+    # sgd_jpy_rate = 110.0
+
 # --- UI表示設定 ---
 # DBカラム名と日本語表示名のマッピング
 # created_at, updated_at はUTCで保存されているため、ユーザーには分かりやすいようにタイムゾーン情報を付記
@@ -112,7 +130,8 @@ COLUMN_MAPPING = {
     "id": "商品ID",
     "product_url": "商品URL",
     "product_name": "商品名",
-    "price": "価格",
+    "price": "価格 (SGD)",
+    "price_jpy": "価格 (JPY)", # JPY価格表示用の列を追加
     "currency": "通貨",
     "image_url": "画像URL",
     "location": "発送元",
@@ -124,7 +143,8 @@ COLUMN_MAPPING = {
 }
 
 # デフォルトで表示する列のリスト（日本語表示名）
-DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格", "販売数", "ショップタイプ", "リストタイプ", "画像URL", "商品URL"]
+# JPY価格もデフォルトで表示するように変更
+DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格 (SGD)", "価格 (JPY)", "販売数", "ショップタイプ", "リストタイプ", "画像URL", "商品URL"]
 
 # 利用可能な全ての列リスト（日本語表示名）
 ALL_DISPLAY_COLUMNS = list(COLUMN_MAPPING.values())
@@ -150,13 +170,22 @@ if 'calculator_expanded' not in st.session_state:
 
 with st.form(key="product_search_form"):
     st.subheader("絞り込み条件")
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         min_sold = st.number_input("最小販売数", min_value=0, value=10)
     with c2:
         max_sold = st.number_input("最大販売数", min_value=0, value=1000)
     with c3:
+        # JPYでの価格範囲入力フォームを追加
+        min_price_jpy = st.number_input("最小価格 (JPY)", min_value=0, value=0)
+    with c4:
+        max_price_jpy = st.number_input("最大価格 (JPY)", min_value=0, value=0)
+
+    # 2段目の絞り込み条件
+    c5, c6, c7, c8 = st.columns(4)
+    with c5:
         shop_type = st.selectbox("ショップタイプ", options=["", "Standard", "Preferred", "Mall"], index=0)
+
 
     st.subheader("表示オプション")
     col_opt1, col_opt2 = st.columns([3, 1])
@@ -179,6 +208,13 @@ if search_button:
         "shop_type": shop_type if shop_type else None,
         "limit": limit
     }
+    # JPY価格フィルタのロジック
+    if sgd_jpy_rate and (min_price_jpy > 0 or max_price_jpy > 0):
+        if min_price_jpy > 0:
+            params["min_price_sgd"] = min_price_jpy / sgd_jpy_rate
+        if max_price_jpy > 0:
+            params["max_price_sgd"] = max_price_jpy / sgd_jpy_rate
+
     params = {k: v for k, v in params.items() if v is not None}
 
     try:
@@ -188,13 +224,24 @@ if search_button:
         if response.status_code == 200:
             data = response.json()
             if data:
-                st.session_state.search_results_df = pd.DataFrame(data)
+                df = pd.DataFrame(data)
+                # JPY価格を計算して列を追加
+                if sgd_jpy_rate:
+                    # 'price' 列が数値型であることを確認し、NaNの場合は0に置換
+                    df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
+                    df["price_jpy"] = (df["price"] * sgd_jpy_rate).round(0).astype(int)
+                else:
+                    df["price_jpy"] = 0 # レート取得失敗時は0
+                st.session_state.search_results_df = df
             else:
                 st.session_state.search_results_df = pd.DataFrame()
                 st.info("指定された条件に一致する商品はありませんでした。")
         else:
             st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
-            st.json(response.json())
+            try:
+                st.json(response.json())
+            except json.JSONDecodeError:
+                st.text(response.text)
             st.session_state.search_results_df = pd.DataFrame()
 
     except requests.exceptions.RequestException as e:
@@ -211,6 +258,7 @@ if not st.session_state.search_results_df.empty:
     selected_db_columns = [REVERSE_COLUMN_MAPPING[disp_col] for disp_col in selected_display_columns if disp_col in REVERSE_COLUMN_MAPPING]
 
     # 表示用のデータフレームを準備
+    # JPY価格列が追加されたデータフレームをコピー
     df_display = st.session_state.search_results_df.copy()
 
     # プレビュー選択用の列を追加
@@ -258,7 +306,14 @@ if not st.session_state.search_results_df.empty:
                     st.image(selected_row_dict["image_url"], width=150)
             with col_info:
                 st.markdown(f"**{selected_row_dict.get('product_name', '商品名なし')}**")
-                st.text(f"価格: {selected_row_dict.get('price')} {selected_row_dict.get('currency')}")
+                price_sgd = selected_row_dict.get('price', 0)
+                price_jpy = selected_row_dict.get('price_jpy', 0)
+                currency = selected_row_dict.get('currency', 'SGD')
+                # JPY価格が計算されている場合、両方の価格を表示
+                if price_jpy > 0:
+                    st.text(f"価格: {price_sgd} {currency} ({price_jpy:,.0f} JPY)")
+                else:
+                    st.text(f"価格: {price_sgd} {currency}")
                 st.text(f"販売数: {selected_row_dict.get('sold', 0)}")
                 st.text(f"発送元: {selected_row_dict.get('location', '不明')}")
                 st.text(f"ショップタイプ: {selected_row_dict.get('shop_type', '不明')}")

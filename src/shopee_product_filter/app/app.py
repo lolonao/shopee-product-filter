@@ -195,7 +195,7 @@ if 'calculator_expanded' not in st.session_state:
     st.session_state.calculator_expanded = False # 計算機エキスパンダーの開閉状態
 
 
-with st.form(key="product_search_form"):
+with st.form(key="product_search_form", enter_to_submit=False):
     st.subheader("絞り込み条件")
     c1, c2, c3, c4 = st.columns(4)
     with c1:

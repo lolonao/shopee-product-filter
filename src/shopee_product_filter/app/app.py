@@ -8,6 +8,7 @@ from datetime import datetime
 import sys
 from pathlib import Path
 import json
+import time
 
 # --- モジュール検索パスの設定 ---
 # 'uv run streamlit run' で実行した際に 'src' 配下のモジュールを正しく見つけられるように、
@@ -86,27 +87,38 @@ with st.expander("📤 商品一覧HTMLファイルをアップロードしてDB
                 response = requests.post(FASTAPI_UPLOAD_URL, files=files_to_upload)
             
             st.subheader("処理結果")
-            if response.status_code == 200:
-                results = response.json()
-                for result in results:
-                    file_name = result.get("file_name", "不明なファイル")
-                    status = result.get("status", "unknown")
-                    message = result.get("message", "詳細不明")
-                    if status == "success":
-                        st.success(f"✅ {file_name}: {message}")
-                    elif status == "skipped":
-                        st.warning(f"⚠️ {file_name}: {message}")
-                    else:
-                        st.error(f"❌ {file_name}: {message}")
-            else:
-                st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
-                try:
-                    st.json(response.json())
-                except json.JSONDecodeError:
-                    st.text(response.text)
+            # メッセージ表示用のプレースホルダー
+            placeholder = st.empty()
+            with placeholder.container():
+                if response.status_code == 200:
+                    results = response.json()
+                    for result in results:
+                        file_name = result.get("file_name", "不明なファイル")
+                        status = result.get("status", "unknown")
+                        message = result.get("message", "詳細不明")
+                        if status == "success":
+                            st.success(f"✅ {file_name}: {message}")
+                        elif status == "skipped":
+                            st.warning(f"⚠️ {file_name}: {message}")
+                        else:
+                            st.error(f"❌ {file_name}: {message}")
+                else:
+                    st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
+                    try:
+                        st.json(response.json())
+                    except json.JSONDecodeError:
+                        st.text(response.text)
+
+            # 5秒待ってからメッセージを消去
+            time.sleep(5)
+            placeholder.empty()
 
         except requests.exceptions.RequestException as e:
-            st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
+            placeholder = st.empty()
+            with placeholder.container():
+                st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
+            time.sleep(5)
+            placeholder.empty()
 
 # --- DB Search Section ---
 st.header("🔍 登録済み商品検索")
@@ -215,8 +227,15 @@ if search_button:
 
     # バリデーションエラーがある場合、エラーメッセージを表示し、以前の検索結果をクリア
     if error_messages:
-        for msg in error_messages:
-            st.error(msg)
+        placeholder = st.empty()
+        with placeholder.container():
+            for msg in error_messages:
+                st.error(msg)
+
+        # 3秒待ってからメッセージを消去
+        time.sleep(3)
+        placeholder.empty()
+
         # 以前の検索結果をクリアすることで、エラーメッセージのみが表示されるようにする
         st.session_state.search_results_df = pd.DataFrame()
     # バリデーションエラーがなければ、検索処理を実行

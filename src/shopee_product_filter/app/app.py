@@ -169,7 +169,7 @@ COLUMN_MAPPING = {
 
 # デフォルトで表示する列のリスト（日本語表示名）
 # JPY価格もデフォルトで表示するように変更
-DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格 (SGD)", "価格 (JPY)", "販売数", "ショップタイプ", "リストタイプ", "画像URL", "商品URL"]
+DEFAULT_DISPLAY_COLUMNS = ["商品名", "価格 (SGD)", "価格 (JPY)", "販売数", "発送元", "ショップタイプ", "リストタイプ", "画像URL", "商品URL"]
 
 # 利用可能な全ての列リスト（日本語表示名）
 ALL_DISPLAY_COLUMNS = list(COLUMN_MAPPING.values())

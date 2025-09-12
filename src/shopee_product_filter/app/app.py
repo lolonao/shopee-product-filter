@@ -240,32 +240,32 @@ if search_button:
             with st.spinner("データベースから商品情報を検索中..."):
                 response = requests.get(FASTAPI_PRODUCTS_URL, params=params)
         
-        if response.status_code == 200:
-            data = response.json()
-            if data:
-                df = pd.DataFrame(data)
-                # JPY価格を計算して列を追加
-                if sgd_jpy_rate:
-                    # 'price' 列が数値型であることを確認し、NaNの場合は0に置換
-                    df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
-                    df["price_jpy"] = (df["price"] * sgd_jpy_rate).round(0).astype(int)
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    df = pd.DataFrame(data)
+                    # JPY価格を計算して列を追加
+                    if sgd_jpy_rate:
+                        # 'price' 列が数値型であることを確認し、NaNの場合は0に置換
+                        df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
+                        df["price_jpy"] = (df["price"] * sgd_jpy_rate).round(0).astype(int)
+                    else:
+                        df["price_jpy"] = 0 # レート取得失敗時は0
+                    st.session_state.search_results_df = df
                 else:
-                    df["price_jpy"] = 0 # レート取得失敗時は0
-                st.session_state.search_results_df = df
+                    st.session_state.search_results_df = pd.DataFrame()
+                    st.info("指定された条件に一致する商品はありませんでした。")
             else:
+                st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
+                try:
+                    st.json(response.json())
+                except json.JSONDecodeError:
+                    st.text(response.text)
                 st.session_state.search_results_df = pd.DataFrame()
-                st.info("指定された条件に一致する商品はありませんでした。")
-        else:
-            st.error(f"APIサーバーからエラーが返されました (ステータスコード: {response.status_code})")
-            try:
-                st.json(response.json())
-            except json.JSONDecodeError:
-                st.text(response.text)
-            st.session_state.search_results_df = pd.DataFrame()
 
-    except requests.exceptions.RequestException as e:
-        st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
-        st.session_state.search_results_df = pd.DataFrame()
+        except requests.exceptions.RequestException as e:
+            st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
+            st.session_state.search_results_df = pd.DataFrame()
 
 # --- Display Search Results and Preview ---
 if not st.session_state.search_results_df.empty:

@@ -70,6 +70,11 @@ def set_calculator_inputs(price: float, currency: str):
         st.session_state.target_country_code = country_code
     st.session_state.calculator_expanded = True # 計算機エキスパンダーを開かせる
 
+def clear_upload_state():
+    """ファイルアップローダーの内容が変更されたときに、処理済みフラグをリセットする"""
+    if 'upload_processed' in st.session_state:
+        st.session_state.upload_processed = False
+
 # --- Main App UI ---
 st.set_page_config(layout="wide", page_title="Shopee Product Prospector")
 st.title("🛍️ Shopee Product Prospector")
@@ -78,9 +83,14 @@ st.info(f"ℹ️ **ご利用の前に、APIサーバーが起動しているこ�
 # --- File Upload Section ---
 with st.expander("📤 商品一覧HTMLファイルをアップロードしてDBに登録/更新", expanded=True):
     uploaded_html_files = st.file_uploader(
-        "Shopeeの商品一覧HTMLファイルを選択してください。", type="html", accept_multiple_files=True, key="html_uploader"
+        "Shopeeの商品一覧HTMLファイルを選択してください。",
+        type="html",
+        accept_multiple_files=True,
+        key="html_uploader",
+        on_change=clear_upload_state
     )
-    if uploaded_html_files:
+    # ファイルがアップロードされ、まだ処理されていない場合にのみ実行
+    if uploaded_html_files and not st.session_state.get("upload_processed", False):
         files_to_upload = [("html_files", (f.name, f.getvalue(), f.type)) for f in uploaded_html_files]
         try:
             with st.spinner(f"{len(files_to_upload)}個のファイルをAPIサーバーに送信中..."):
@@ -119,6 +129,9 @@ with st.expander("📤 商品一覧HTMLファイルをアップロードしてDB
                 st.error(f"APIサーバーへの接続中にエラーが発生しました: {e}")
             time.sleep(5)
             placeholder.empty()
+
+        # 処理が完了したことをマーク
+        st.session_state.upload_processed = True
 
 # --- DB Search Section ---
 st.header("🔍 登録済み商品検索")
@@ -171,6 +184,8 @@ CURRENCY_TO_COUNTRY = {
 # Initialize session state
 if 'search_results_df' not in st.session_state:
     st.session_state.search_results_df = pd.DataFrame()
+if 'upload_processed' not in st.session_state:
+    st.session_state.upload_processed = False
 # プレビューから計算機に値を渡すためのセッション状態
 if 'target_price' not in st.session_state:
     st.session_state.target_price = 100.0  # 計算機のデフォルト値
